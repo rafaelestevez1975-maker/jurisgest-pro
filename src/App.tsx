@@ -26,8 +26,19 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
 ];
 
 function AppContent() {
-  const { state } = useApp();
+  const { state, loading } = useApp();
   const [page, setPage] = useState<Page>('dashboard');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 font-medium">Carregando dados...</p>
+        </div>
+      </div>
+    );
+  }
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const naoLidas = state.publicacoes.filter(p => p.status === 'não_lida').length;

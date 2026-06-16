@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import type { AppState, Cliente, Processo, Prazo, Publicacao, Peticao, Advogado, Feriado, ConfigEscritorio, CredencialTribunal } from './types';
 import { INITIAL_STATE } from './data';
+import { loadState, db } from './lib/db';
 
 type Action =
   | { type: 'SET_STATE'; payload: AppState }
@@ -68,28 +69,130 @@ function reducer(state: AppState, action: Action): AppState {
   }
 }
 
-const STORAGE_KEY = 'jurisgest_data';
+// Sync action → Supabase (fire-and-forget; optimistic UI via reducer)
+function syncToSupabase(action: Action, nextState: AppState) {
+  switch (action.type) {
+    case 'ADD_CLIENTE':
+    case 'UPDATE_CLIENTE':
+      db.upsertCliente(action.payload); break;
+    case 'DELETE_CLIENTE':
+      db.deleteCliente(action.payload); break;
+
+    case 'ADD_PROCESSO':
+    case 'UPDATE_PROCESSO':
+      db.upsertProcesso(action.payload); break;
+    case 'DELETE_PROCESSO':
+      db.deleteProcesso(action.payload); break;
+
+    case 'ADD_PRAZO':
+    case 'UPDATE_PRAZO':
+      db.upsertPrazo(action.payload); break;
+    case 'DELETE_PRAZO':
+      db.deletePrazo(action.payload); break;
+
+    case 'ADD_PUBLICACAO':
+    case 'UPDATE_PUBLICACAO':
+      db.upsertPublicacao(action.payload); break;
+    case 'DELETE_PUBLICACAO':
+      db.deletePublicacao(action.payload); break;
+
+    case 'ADD_PETICAO':
+    case 'UPDATE_PETICAO':
+      db.upsertPeticao(action.payload); break;
+    case 'DELETE_PETICAO':
+      db.deletePeticao(action.payload); break;
+
+    case 'ADD_ADVOGADO':
+    case 'UPDATE_ADVOGADO':
+      db.upsertAdvogado(action.payload); break;
+    case 'DELETE_ADVOGADO':
+      db.deleteAdvogado(action.payload); break;
+
+    case 'ADD_FERIADO':
+      db.upsertFeriado(action.payload); break;
+    case 'DELETE_FERIADO':
+      db.deleteFeriado(action.payload); break;
+
+    case 'UPDATE_ESCRITORIO':
+      db.upsertEscritorio(action.payload, nextState.anthropicApiKey); break;
+    case 'SET_ANTHROPIC_KEY':
+      db.upsertEscritorio(nextState.escritorio, action.payload); break;
+
+    case 'ADD_CREDENCIAL':
+    case 'UPDATE_CREDENCIAL':
+      db.upsertCredencial(action.payload); break;
+
+    case 'IMPORT_CLIENTES':
+      action.payload.forEach(c => db.upsertCliente(c)); break;
+    case 'IMPORT_PROCESSOS':
+      action.payload.forEach(p => db.upsertProcesso(p)); break;
+    case 'IMPORT_PETICOES':
+      action.payload.forEach(p => db.upsertPeticao(p)); break;
+    case 'IMPORT_PUBLICACOES':
+      action.payload.forEach(p => db.upsertPublicacao(p)); break;
+  }
+}
 
 interface AppContextType {
   state: AppState;
   dispatch: React.Dispatch<Action>;
+  loading: boolean;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, INITIAL_STATE, (init) => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : init;
-    } catch { return init; }
-  });
+  const [state, baseDispatch] = useReducer(reducer, INITIAL_STATE);
+  const [loading, setLoading] = useState(true);
 
+  // Load from Supabase on mount, fall back to localStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+    loadState()
+      .then(remote => {
+        // If DB is empty (no clientes), seed with INITIAL_STATE sample data
+        if (remote.clientes.length === 0 && remote.processos.length === 0) {
+          const seed = INITIAL_STATE;
+          baseDispatch({ type: 'SET_STATE', payload: seed });
+          // Persist seed data to Supabase
+          seed.clientes.forEach(c => db.upsertCliente(c));
+          seed.processos.forEach(p => db.upsertProcesso(p));
+          seed.prazos.forEach(p => db.upsertPrazo(p));
+          seed.publicacoes.forEach(p => db.upsertPublicacao(p));
+          seed.peticoes.forEach(p => db.upsertPeticao(p));
+          seed.advogados.forEach(a => db.upsertAdvogado(a));
+          seed.feriadosMunicipais.forEach(f => db.upsertFeriado(f));
+          db.upsertEscritorio(seed.escritorio, seed.anthropicApiKey);
+        } else {
+          baseDispatch({ type: 'SET_STATE', payload: remote });
+        }
+      })
+      .catch(() => {
+        // offline: try localStorage fallback
+        try {
+          const saved = localStorage.getItem('jurisgest_data');
+          if (saved) baseDispatch({ type: 'SET_STATE', payload: JSON.parse(saved) });
+        } catch { /* use INITIAL_STATE */ }
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
-  return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
+  // Dispatch wrapper: update state optimistically, then sync to Supabase
+  const dispatch: React.Dispatch<Action> = (action: Action) => {
+    baseDispatch(action);
+    // Compute next state for actions that need it (escritorio/apiKey updates)
+    const nextState = reducer(state, action);
+    syncToSupabase(action, nextState);
+    // Also keep localStorage as offline cache
+    try {
+      localStorage.setItem('jurisgest_data', JSON.stringify(nextState));
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <AppContext.Provider value={{ state, dispatch, loading }}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useApp() {
