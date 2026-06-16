@@ -30,7 +30,8 @@ type Action =
   | { type: 'IMPORT_CLIENTES'; payload: Cliente[] }
   | { type: 'IMPORT_PROCESSOS'; payload: Processo[] }
   | { type: 'IMPORT_PETICOES'; payload: Peticao[] }
-  | { type: 'IMPORT_PUBLICACOES'; payload: Publicacao[] };
+  | { type: 'IMPORT_PUBLICACOES'; payload: Publicacao[] }
+  | { type: 'SET_ANTHROPIC_KEY'; payload: string };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -62,6 +63,7 @@ function reducer(state: AppState, action: Action): AppState {
     case 'IMPORT_PROCESSOS': return { ...state, processos: [...state.processos, ...action.payload] };
     case 'IMPORT_PETICOES': return { ...state, peticoes: [...state.peticoes, ...action.payload] };
     case 'IMPORT_PUBLICACOES': return { ...state, publicacoes: [...state.publicacoes, ...action.payload] };
+    case 'SET_ANTHROPIC_KEY': return { ...state, anthropicApiKey: action.payload };
     default: return state;
   }
 }

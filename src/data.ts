@@ -41,6 +41,7 @@ export function diasRestantes(dataHora: string): number {
 }
 
 export const INITIAL_STATE: AppState = {
+  anthropicApiKey: '',
   escritorio: {
     nome: 'Escritório Jurídico',
     oab: 'OAB/SP 123.456',

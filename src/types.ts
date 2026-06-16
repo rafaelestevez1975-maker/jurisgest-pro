@@ -127,4 +127,5 @@ export interface AppState {
   feriadosMunicipais: Feriado[];
   escritorio: ConfigEscritorio;
   credenciais: CredencialTribunal[];
+  anthropicApiKey: string;
 }

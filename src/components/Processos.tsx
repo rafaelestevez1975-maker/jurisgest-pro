@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Search, Edit, Trash2, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain } from 'lucide-react';
 import { toast } from 'sonner';
 
 const AREAS: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','outro'];
@@ -141,11 +141,463 @@ async function buscarDataJud(numero: string): Promise<DataJudResult> {
   };
 }
 
-// ─── Busca DataJud Dialog ───────────────────────────────────────────────────
+// ─── IA Import Dialog (Imagem / Texto / DataJud) ────────────────────────────
 
-function DialogBuscarDataJud({ onPreencherFormulario, onClose }: {
+// Extrai o primeiro número CNJ de um texto
+function extrairNumeroCNJ(texto: string): string {
+  const match = texto.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+  return match ? match[0] : '';
+}
+
+// Parse de texto livre para dados processuais
+function parsearTexto(texto: string): Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> {
+  const result: Partial<Omit<Processo, 'id' | 'criadoRemp' | 'movimentacoes'>> = {};
+  const t = texto;
+
+  // Número CNJ
+  const numMatch = t.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+  if (numMatch) result.numero = numMatch[0];
+
+  // Tribunal
+  const trib = t.match(/\b(TJSP|TJRJ|TJMG|TJRS|TJPR|TJSC|TJBA|TJPE|TJCE|TRT\d{1,2}|TRF\d|STJ|STF|TST)\b/i);
+  if (trib) result.tribunal = trib[0].toUpperCase();
+
+  // Valor da causa
+  const valorMatch = t.match(/R\$\s*([\d.,]+)/i);
+  if (valorMatch) {
+    const v = parseFloat(valorMatch[1].replace(/\./g, '').replace(',', '.'));
+    if (!isNaN(v)) result.valorCausa = v;
+  }
+
+  // Data de ajuizamento / distribuição
+  const dataMatch = t.match(/(\d{2}\/\d{2}\/\d{4})/);
+  if (dataMatch) {
+    const [d, m, a] = dataMatch[0].split('/');
+    result.dataDistribuicao = `${a}-${m}-${d}`;
+  }
+
+  // Comarca
+  const comarcaMatch = t.match(/Comarca\s+(?:de\s+)?([A-ZÀ-Ü][a-zà-ü]+(?:\s+[A-ZÀ-Ü][a-zà-ü]+)*)/i);
+  if (comarcaMatch) result.comarca = comarcaMatch[1];
+
+  // Vara
+  const varaMatch = t.match(/(\d+[ªa°]?\s+Vara[^,\n]{0,60})/i);
+  if (varaMatch) result.vara = varaMatch[1].trim();
+
+  return result;
+}
+
+async function analisarComClaudeVision(
+  base64: string,
+  mimeType: string,
+  apiKey: string
+): Promise<{ dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>; partes: { poloAtivo: string; poloPassivo: string }; textoExtraido: string }> {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mimeType, data: base64 },
+          },
+          {
+            type: 'text',
+            text: `Analise esta imagem de um documento ou tela de sistema jurídico brasileiro e extraia APENAS as informações processuais em JSON válido com esta estrutura:
+{
+  "numero": "número CNJ completo (NNNNNNN-DD.AAAA.J.TT.OOOO)",
+  "tribunal": "sigla do tribunal (ex: TJSP, TRT2, STJ)",
+  "vara": "nome completo da vara ou juízo",
+  "comarca": "cidade/comarca",
+  "poloAtivo": "nome completo da parte autora/requerente",
+  "poloPassivo": "nome completo da parte ré/requerida",
+  "valorCausa": número em reais sem formatação ou null,
+  "dataDistribuicao": "data no formato YYYY-MM-DD ou null",
+  "classe": "classe processual (ex: Reclamação Trabalhista, Ação de Cobrança)",
+  "assunto": "assunto principal do processo",
+  "textoExtraido": "todo o texto relevante extraído da imagem"
+}
+Retorne APENAS o JSON, sem explicações.`
+          }
+        ]
+      }]
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as any)?.error?.message || `Erro ${resp.status} ao chamar Claude API.`);
+  }
+
+  const data = await resp.json();
+  const text = data.content?.[0]?.text || '{}';
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('Claude não retornou JSON válido.');
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  return {
+    dados: {
+      numero: parsed.numero || '',
+      tribunal: parsed.tribunal || '',
+      vara: parsed.vara || '',
+      comarca: parsed.comarca || '',
+      valorCausa: parsed.valorCausa || undefined,
+      dataDistribuicao: parsed.dataDistribuicao || '',
+      area: inferirArea((parsed.classe || '') + ' ' + (parsed.assunto || '')),
+      parteContraria: parsed.poloPassivo || '',
+      status: 'ativo',
+      fase: 'conhecimento',
+      observacoes: parsed.assunto ? `Assunto: ${parsed.assunto}` : '',
+    },
+    partes: { poloAtivo: parsed.poloAtivo || '', poloPassivo: parsed.poloPassivo || '' },
+    textoExtraido: parsed.textoExtraido || '',
+  };
+}
+
+async function analisarTextoComClaude(
+  texto: string,
+  apiKey: string
+): Promise<{ dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>; partes: { poloAtivo: string; poloPassivo: string } }> {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `Analise este texto copiado de um sistema jurídico brasileiro e extraia as informações processuais em JSON válido:
+{
+  "numero": "número CNJ completo (NNNNNNN-DD.AAAA.J.TT.OOOO) ou null",
+  "tribunal": "sigla do tribunal (TJSP, TRT2, STJ, etc.) ou null",
+  "vara": "nome da vara ou juízo ou null",
+  "comarca": "cidade/comarca ou null",
+  "poloAtivo": "nome da parte autora/requerente ou null",
+  "poloPassivo": "nome da parte ré/requerida ou null",
+  "valorCausa": número em reais sem formatação ou null,
+  "dataDistribuicao": "data no formato YYYY-MM-DD ou null",
+  "classe": "classe processual ou null",
+  "assunto": "assunto principal ou null"
+}
+TEXTO:
+${texto}
+
+Retorne APENAS o JSON.`
+      }]
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error((err as any)?.error?.message || `Erro ${resp.status} ao chamar Claude API.`);
+  }
+
+  const data = await resp.json();
+  const text = data.content?.[0]?.text || '{}';
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('Claude não retornou JSON válido.');
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  return {
+    dados: {
+      numero: parsed.numero || '',
+      tribunal: parsed.tribunal || '',
+      vara: parsed.vara || '',
+      comarca: parsed.comarca || '',
+      valorCausa: parsed.valorCausa || undefined,
+      dataDistribuicao: parsed.dataDistribuicao || '',
+      area: inferirArea((parsed.classe || '') + ' ' + (parsed.assunto || '')),
+      parteContraria: parsed.poloPassivo || '',
+      status: 'ativo',
+      fase: 'conhecimento',
+      observacoes: parsed.assunto ? `Assunto: ${parsed.assunto}` : '',
+    },
+    partes: { poloAtivo: parsed.poloAtivo || '', poloPassivo: parsed.poloPassivo || '' },
+  };
+}
+
+function DialogImportarIA({ onPreencherFormulario, onClose }: {
   onPreencherFormulario: (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[] }) => void;
   onClose: () => void;
+}) {
+  const { state } = useApp();
+  const apiKey = state.anthropicApiKey;
+  const [tab, setTab] = useState<'imagem' | 'texto' | 'datajud'>('imagem');
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
+  const [preview, setPreview] = useState<string>('');
+  const [imageBase64, setImageBase64] = useState('');
+  const [imageMime, setImageMime] = useState('');
+  const [texto, setTexto] = useState('');
+  const [resultado, setResultado] = useState<{
+    dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>;
+    partes: { poloAtivo: string; poloPassivo: string };
+    consultarDataJud?: boolean;
+  } | null>(null);
+  const [clienteId, setClienteId] = useState('');
+  const [consultandoDataJud, setConsultandoDataJud] = useState(false);
+
+  const handleImagem = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target?.result as string;
+      setPreview(dataUrl);
+      const base64 = dataUrl.split(',')[1];
+      setImageBase64(base64);
+      setImageMime(file.type as string);
+      setResultado(null);
+      setErro('');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const analisarImagem = async () => {
+    if (!apiKey) { setErro('Configure a Chave API Anthropic nas Configurações do sistema primeiro.'); return; }
+    if (!imageBase64) { setErro('Selecione uma imagem primeiro.'); return; }
+    setLoading(true); setErro(''); setResultado(null);
+    try {
+      const res = await analisarComClaudeVision(imageBase64, imageMime, apiKey);
+      setResultado({ dados: res.dados, partes: res.partes, consultarDataJud: !!res.dados.numero });
+    } catch (e: any) { setErro(e.message); }
+    setLoading(false);
+  };
+
+  const analisarTexto = async () => {
+    if (!texto.trim()) { setErro('Cole o texto primeiro.'); return; }
+    setLoading(true); setErro(''); setResultado(null);
+
+    // Try fast regex parse first
+    const parsedRapido = parsearTexto(texto);
+
+    if (apiKey) {
+      // Enhance with Claude
+      try {
+        const res = await analisarTextoComClaude(texto, apiKey);
+        setResultado({ dados: { ...parsedRapido, ...res.dados }, partes: res.partes, consultarDataJud: !!(res.dados.numero || parsedRapido.numero) });
+      } catch {
+        // Fallback to regex only
+        const cnj = extrairNumeroCNJ(texto);
+        setResultado({ dados: parsedRapido, partes: { poloAtivo: '', poloPassivo: parsedRapido.parteContraria || '' }, consultarDataJud: !!cnj });
+      }
+    } else {
+      // Regex only
+      const cnj = extrairNumeroCNJ(texto);
+      setResultado({ dados: parsedRapido, partes: { poloAtivo: '', poloPassivo: parsedRapido.parteContraria || '' }, consultarDataJud: !!cnj });
+    }
+    setLoading(false);
+  };
+
+  const complementarDataJud = async () => {
+    const numero = resultado?.dados.numero;
+    if (!numero) return;
+    setConsultandoDataJud(true);
+    try {
+      const dj = await buscarDataJud(numero);
+      const passivo = dj.partes.find(p => p.polo?.toLowerCase().includes('passiv'));
+      const ativo = dj.partes.find(p => p.polo?.toLowerCase().includes('ativ'));
+      const movs: Movimentacao[] = dj.movimentos.map(m => ({ id: genId(), data: m.data, tipo: 'DataJud', descricao: m.nome }));
+      setResultado(prev => prev ? {
+        ...prev,
+        dados: {
+          ...prev.dados,
+          tribunal: dj.tribunal || prev.dados.tribunal,
+          vara: dj.orgaoJulgador || prev.dados.vara,
+          comarca: dj.orgaoJulgador.replace(/vara.*/i, '').trim() || prev.dados.comarca,
+          valorCausa: dj.valorCausa ?? prev.dados.valorCausa,
+          dataDistribuicao: dj.dataAjuizamento || prev.dados.dataDistribuicao,
+          area: inferirArea(dj.classe + ' ' + dj.assunto) || prev.dados.area,
+          fase: dj.grau === '2' ? 'recursal' : prev.dados.fase,
+          parteContraria: passivo?.nome || prev.dados.parteContraria,
+          observacoes: dj.assunto ? `Assunto: ${dj.assunto}` : prev.dados.observacoes,
+          _movs: movs,
+        } as any,
+        partes: { poloAtivo: ativo?.nome || prev.partes.poloAtivo, poloPassivo: passivo?.nome || prev.partes.poloPassivo },
+      } : prev);
+      toast.success('Dados complementados pelo DataJud!');
+    } catch (e: any) {
+      toast.error(e.message || 'Não foi possível consultar o DataJud.');
+    }
+    setConsultandoDataJud(false);
+  };
+
+  const confirmar = () => {
+    if (!resultado) return;
+    const dados = resultado.dados as any;
+    const movs: Movimentacao[] = dados._movs || [];
+    const { _movs: _removed, ...dadosLimpos } = dados;
+    onPreencherFormulario({ ...dadosLimpos, clienteId, movimentacoes: movs });
+    onClose();
+  };
+
+  const noApiKey = !apiKey;
+
+  return (
+    <div className="space-y-4">
+      {noApiKey && (
+        <div className="bg-amber-50 border border-amber-200 rounded p-3 flex items-start gap-2 text-xs text-amber-800">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Chave API Anthropic não configurada</p>
+            <p className="mt-0.5">Vá em <strong>Configurações → Integrações IA</strong> e insira sua chave. Sem ela, a análise de imagens não funciona e o texto usa apenas extração por padrões.</p>
+          </div>
+        </div>
+      )}
+
+      <Tabs value={tab} onValueChange={v => { setTab(v as any); setResultado(null); setErro(''); }}>
+        <TabsList className="w-full h-9 text-xs">
+          <TabsTrigger value="imagem" className="flex-1 text-xs flex items-center gap-1.5">
+            <ImageIcon size={12} /> Upload de Imagem
+          </TabsTrigger>
+          <TabsTrigger value="texto" className="flex-1 text-xs flex items-center gap-1.5">
+            <FileText size={12} /> Colar Texto
+          </TabsTrigger>
+          <TabsTrigger value="datajud" className="flex-1 text-xs flex items-center gap-1.5">
+            <Wifi size={12} /> DataJud API
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ── ABA IMAGEM ── */}
+        <TabsContent value="imagem" className="space-y-3 mt-3">
+          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
+            <p className="font-semibold flex items-center gap-1.5"><Brain size={12} />Análise por IA (Claude Vision)</p>
+            <p className="mt-0.5">Faça upload de qualquer print de tela — PJe, e-SAJ, Integra, DJe, e-Proc, etc. A IA extrai automaticamente número, partes, vara, tribunal, valor e data.</p>
+          </div>
+          <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-blue-300 transition-colors">
+            <input type="file" accept="image/*" id="img-upload" className="hidden" onChange={handleImagem} />
+            <label htmlFor="img-upload" className="cursor-pointer block">
+              {preview ? (
+                <img src={preview} alt="preview" className="max-h-48 mx-auto rounded shadow object-contain" />
+              ) : (
+                <div className="py-6">
+                  <ImageIcon size={32} className="mx-auto text-gray-300 mb-2" />
+                  <p className="text-sm text-gray-500 font-medium">Clique para selecionar imagem</p>
+                  <p className="text-xs text-gray-400 mt-1">JPG, PNG, GIF, WebP — print de tela de qualquer sistema</p>
+                </div>
+              )}
+            </label>
+          </div>
+          {preview && (
+            <Button className="w-full h-9 bg-[#2563eb] hover:bg-blue-700 text-sm" onClick={analisarImagem} disabled={loading}>
+              {loading ? <><Loader2 size={14} className="animate-spin mr-2" />Analisando com IA...</> : <><Brain size={14} className="mr-2" />Analisar Imagem com IA</>}
+            </Button>
+          )}
+        </TabsContent>
+
+        {/* ── ABA TEXTO ── */}
+        <TabsContent value="texto" className="space-y-3 mt-3">
+          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
+            <p className="font-semibold">Copie e cole texto de qualquer sistema</p>
+            <p className="mt-0.5">Cole texto do Integra, PJe, e-SAJ, e-Proc, Projudi, portais de tribunais, e-mails de citação, etc. O sistema extrai os dados processuais automaticamente.</p>
+          </div>
+          <Textarea
+            placeholder="Cole aqui o texto copiado do sistema jurídico...&#10;&#10;Exemplo: Processo nº 0001234-56.2024.8.26.0001 — 5ª Vara do Trabalho de São Paulo — TJSP..."
+            rows={7}
+            className="text-sm resize-none"
+            value={texto}
+            onChange={e => { setTexto(e.target.value); setResultado(null); setErro(''); }}
+          />
+          <Button className="w-full h-9 bg-[#2563eb] hover:bg-blue-700 text-sm" onClick={analisarTexto} disabled={loading || !texto.trim()}>
+            {loading ? <><Loader2 size={14} className="animate-spin mr-2" />Analisando...</> : <><Brain size={14} className="mr-2" />{apiKey ? 'Analisar com IA' : 'Extrair dados (modo básico)'}</>}
+          </Button>
+        </TabsContent>
+
+        {/* ── ABA DATAJUD ── */}
+        <TabsContent value="datajud" className="mt-3">
+          <DialogBuscarDataJud
+            onPreencherFormulario={d => { onPreencherFormulario(d); onClose(); }}
+            onClose={onClose}
+            embedded
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* ── ERRO ── */}
+      {erro && (
+        <div className="bg-red-50 border border-red-200 rounded p-3 flex items-start gap-2 text-xs text-red-700">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /><span>{erro}</span>
+        </div>
+      )}
+
+      {/* ── RESULTADO ── */}
+      {resultado && tab !== 'datajud' && (
+        <div className="border rounded-lg overflow-hidden">
+          <div className="bg-green-50 border-b border-green-200 px-4 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-green-600" />
+              <span className="text-xs font-semibold text-green-800">Dados extraídos com sucesso</span>
+            </div>
+            {resultado.consultarDataJud && (
+              <Button size="sm" variant="outline" className="h-6 text-[10px] text-blue-700 border-blue-300" onClick={complementarDataJud} disabled={consultandoDataJud}>
+                {consultandoDataJud ? <Loader2 size={10} className="animate-spin mr-1" /> : <Wifi size={10} className="mr-1" />}
+                Complementar via DataJud
+              </Button>
+            )}
+          </div>
+          <div className="p-3 grid grid-cols-2 gap-2 text-xs">
+            {[
+              ['Nº Processo', resultado.dados.numero],
+              ['Tribunal', resultado.dados.tribunal],
+              ['Vara / Juízo', resultado.dados.vara],
+              ['Comarca', resultado.dados.comarca],
+              ['Polo Ativo', resultado.partes.poloAtivo],
+              ['Polo Passivo', resultado.partes.poloPassivo],
+              ['Valor da Causa', resultado.dados.valorCausa ? `R$ ${resultado.dados.valorCausa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null],
+              ['Data Distribuição', resultado.dados.dataDistribuicao],
+              ['Área do Direito', resultado.dados.area],
+            ].filter(([, v]) => v).map(([k, v]) => (
+              <div key={k as string} className="bg-gray-50 rounded p-2">
+                <p className="text-gray-400 text-[10px] uppercase">{k}</p>
+                <p className="font-medium capitalize mt-0.5 truncate">{v as string}</p>
+              </div>
+            ))}
+          </div>
+          {resultado.dados.observacoes && (
+            <div className="px-3 pb-3 text-xs text-gray-500 bg-yellow-50 mx-3 mb-3 rounded p-2">{resultado.dados.observacoes}</div>
+          )}
+          <div className="px-3 pb-3 border-t pt-3">
+            <Label className="text-xs font-semibold">Vincular a cliente cadastrado</Label>
+            <Select value={clienteId} onValueChange={setClienteId}>
+              <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione (opcional)" /></SelectTrigger>
+              <SelectContent>{state.clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+
+      {tab !== 'datajud' && (
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" disabled={!resultado || tab === 'datajud'} onClick={confirmar}>
+            Pré-preencher formulário
+          </Button>
+        </DialogFooter>
+      )}
+    </div>
+  );
+}
+
+// ─── Busca DataJud Dialog ───────────────────────────────────────────────────
+
+function DialogBuscarDataJud({ onPreencherFormulario, onClose, embedded }: {
+  onPreencherFormulario: (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[] }) => void;
+  onClose: () => void;
+  embedded?: boolean;
 }) {
   const { state } = useApp();
   const [numero, setNumero] = useState('');
@@ -607,6 +1059,7 @@ export default function Processos() {
   const [filterTribunal, setFilterTribunal] = useState<string>('todos');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [datajudOpen, setDatajudOpen] = useState(false);
+  const [importarIAOpen, setImportarIAOpen] = useState(false);
   const [editProcesso, setEditProcesso] = useState<Processo | null>(null);
   const [viewProcesso, setViewProcesso] = useState<Processo | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -667,8 +1120,8 @@ export default function Processos() {
           <p className="text-sm text-gray-500">{state.processos.length} processos cadastrados</p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setDatajudOpen(true)}>
-            <Wifi size={14} className="mr-1" /> Buscar no DataJud
+          <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarIAOpen(true)}>
+            <Brain size={14} className="mr-1" /> Importar com IA
           </Button>
           <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditProcesso(null); setPrefill(null); setDialogOpen(true); }}>
             <Plus size={14} className="mr-1" /> Novo Processo
@@ -741,7 +1194,22 @@ export default function Processos() {
         })}
       </div>
 
-      {/* Dialog DataJud */}
+      {/* Dialog Importar com IA */}
+      <Dialog open={importarIAOpen} onOpenChange={setImportarIAOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-[#1e3a5f] flex items-center gap-2">
+              <Brain size={16} className="text-blue-500" /> Importar Processo com IA
+            </DialogTitle>
+          </DialogHeader>
+          <DialogImportarIA
+            onPreencherFormulario={handleDataJudPrefill}
+            onClose={() => setImportarIAOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog DataJud (legado — mantido para sincronizar andamentos) */}
       <Dialog open={datajudOpen} onOpenChange={setDatajudOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
