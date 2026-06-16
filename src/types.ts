@@ -4,7 +4,7 @@ export type AreaDireito = 'cível' | 'trabalhista' | 'criminal' | 'previdenciár
 export type FaseProcessual = 'conhecimento' | 'recursal' | 'execução' | 'outro';
 export type TipoPrazo = 'audiência' | 'prazo_fatal' | 'prazo_dilatório' | 'diligência' | 'reunião' | 'outro';
 export type StatusPrazo = 'pendente' | 'cumprido' | 'cancelado';
-export type StatusPublicacao = 'não_lida' | 'lida' | 'prazo_gerado';
+export type StatusPublicacao = 'não_lida' | 'lida' | 'prazo_gerado' | 'arquivada';
 export type TipoPeticao = 'inicial' | 'contestação' | 'recurso' | 'parecer' | 'embargos' | 'outro';
 export type StatusPeticao = 'rascunho' | 'protocolado' | 'juntado';
 
@@ -65,6 +65,8 @@ export interface Prazo {
   status: StatusPrazo;
   alertaDias: number;
   criadoEm: string;
+  vistoEm?: string;
+  vistoPor?: string;
 }
 
 export interface Publicacao {
