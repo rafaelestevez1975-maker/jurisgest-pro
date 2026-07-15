@@ -201,6 +201,15 @@ export function useApp() {
   return ctx;
 }
 
-export function genId() {
-  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+// Gera um UUID v4 válido — as colunas `id` no Supabase são do tipo uuid,
+// então IDs precisam ser UUIDs (crypto.randomUUID em contexto seguro/localhost).
+export function genId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  // Fallback (navegadores antigos / contexto não seguro)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, ch => {
+    const r = (Math.random() * 16) | 0;
+    const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }

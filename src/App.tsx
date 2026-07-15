@@ -28,6 +28,7 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
 function AppContent() {
   const { state, loading } = useApp();
   const [page, setPage] = useState<Page>('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (loading) {
     return (
@@ -39,7 +40,6 @@ function AppContent() {
       </div>
     );
   }
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const naoLidas = state.publicacoes.filter(p => p.status === 'não_lida').length;
   const prazosUrgentes = state.prazos.filter(p => p.status === 'pendente' && diasRestantes(p.dataHora) <= 3 && diasRestantes(p.dataHora) >= 0).length;

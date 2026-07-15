@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp, genId } from '../context';
-import type { Processo, AreaDireito, FaseProcessual, StatusProcesso, Movimentacao } from '../types';
+import { db } from '../lib/db';
+import type { Processo, Cliente, AreaDireito, FaseProcessual, StatusProcesso, Movimentacao } from '../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Search, Edit, Trash2, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus } from 'lucide-react';
 import { toast } from 'sonner';
 
 const AREAS: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','outro'];
@@ -1049,6 +1050,307 @@ function ProcessoDetalhe({ processo, onClose: _onClose }: { processo: Processo; 
   );
 }
 
+// ─── Importação em Lote ─────────────────────────────────────────────────────
+
+interface LinhaLote {
+  numero: string;
+  cliente: string;
+  adverso: string;
+  tribunal: string;
+  incluir: boolean;
+}
+
+const REGEX_CNJ = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
+
+// Detecta se um nome parece ser Pessoa Jurídica
+function ehPessoaJuridica(nome: string): boolean {
+  return /\b(ltda|s\/a|s\.?a\.?|eireli|me|epp|associa|empresa|com[ée]rcio|ind[uú]stria|cia|company|franchising|banco|seguros|financeira)\b/i.test(nome);
+}
+
+// Faz o parse de texto colado (tabela do Integra, CSV ou lista de números CNJ)
+function parsearLote(texto: string): LinhaLote[] {
+  const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const resultado: LinhaLote[] = [];
+
+  for (const linha of linhas) {
+    // Pula cabeçalhos comuns
+    if (/^(numera[çc][ãa]o|n[úu]mero|processo)\b/i.test(linha) && /cliente|adverso|pasta|parte/i.test(linha)) continue;
+
+    // Detecta o delimitador
+    let campos: string[];
+    if (linha.includes('\t')) campos = linha.split('\t');
+    else if (linha.includes(';')) campos = linha.split(';');
+    else if (/\s{2,}/.test(linha)) campos = linha.split(/\s{2,}/);
+    else if (linha.includes(',') && REGEX_CNJ.test(linha)) campos = linha.split(',');
+    else campos = [linha];
+    campos = campos.map(c => c.trim()).filter(Boolean);
+    if (campos.length === 0) continue;
+
+    // Extrai número: CNJ padrão, senão o primeiro campo que pareça número de processo
+    const cnjMatch = linha.match(REGEX_CNJ);
+    let numero = cnjMatch ? cnjMatch[0] : '';
+    if (!numero) {
+      const c0 = campos[0];
+      if (/\d/.test(c0) && /[.\-/]/.test(c0)) numero = c0;                 // formatos antigos: 001/1.05.0357271-7
+      else if (/^(tempor|sem\s*n|-|s\/n)/i.test(c0)) numero = c0.toUpperCase();
+    }
+
+    // Campos textuais (remove o número e "pastas" puramente numéricas como "0")
+    const textuais = campos.filter(c => c !== numero && !/^\d+$/.test(c) && !REGEX_CNJ.test(c));
+    const cliente = textuais[0] || '';
+    const adverso = textuais.length >= 2 ? textuais[textuais.length - 1] : '';
+
+    const trib = tribunalFromNumero(numero);
+    // Só adiciona linhas que tenham ao menos número OU cliente
+    if (numero || cliente) {
+      resultado.push({ numero, cliente, adverso, tribunal: trib?.sigla || '', incluir: true });
+    }
+  }
+  return resultado;
+}
+
+function DialogImportarLote({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = useApp();
+  const [texto, setTexto] = useState('');
+  const [linhas, setLinhas] = useState<LinhaLote[] | null>(null);
+  const [enriquecerDataJud, setEnriquecerDataJud] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [progresso, setProgresso] = useState({ atual: 0, total: 0 });
+
+  const analisar = () => {
+    const parsed = parsearLote(texto);
+    if (parsed.length === 0) {
+      toast.error('Nenhum processo reconhecido. Verifique o formato do texto colado.');
+      return;
+    }
+    setLinhas(parsed);
+  };
+
+  const handleArquivo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setTexto(String(reader.result || ''));
+      const parsed = parsearLote(String(reader.result || ''));
+      if (parsed.length) setLinhas(parsed);
+    };
+    reader.readAsText(file);
+  };
+
+  const toggleLinha = (idx: number) => {
+    setLinhas(ls => ls ? ls.map((l, i) => i === idx ? { ...l, incluir: !l.incluir } : l) : ls);
+  };
+
+  const editarCampo = (idx: number, campo: keyof LinhaLote, valor: string) => {
+    setLinhas(ls => ls ? ls.map((l, i) => i === idx ? { ...l, [campo]: valor } : l) : ls);
+  };
+
+  const selecionadas = linhas?.filter(l => l.incluir && (l.numero || l.cliente)) || [];
+  const novosClientesCount = useMemo(() => {
+    if (!linhas) return 0;
+    const existentes = new Set(state.clientes.map(c => c.nome.trim().toLowerCase()));
+    const novos = new Set<string>();
+    for (const l of selecionadas) {
+      const n = l.cliente.trim().toLowerCase();
+      if (n && !existentes.has(n)) novos.add(n);
+    }
+    return novos.size;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linhas, state.clientes]);
+
+  const confirmar = async () => {
+    if (selecionadas.length === 0) { toast.error('Selecione ao menos um processo.'); return; }
+    setImportando(true);
+    setProgresso({ atual: 0, total: selecionadas.length });
+
+    const clienteMap = new Map(state.clientes.map(c => [c.nome.trim().toLowerCase(), c.id]));
+    const novosClientes: Cliente[] = [];
+    const processos: Processo[] = [];
+    const hoje = new Date().toISOString().split('T')[0];
+
+    for (let i = 0; i < selecionadas.length; i++) {
+      const linha = selecionadas[i];
+
+      // Resolve ou cria o cliente
+      let clienteId = '';
+      const nomeCli = linha.cliente.trim();
+      if (nomeCli) {
+        const key = nomeCli.toLowerCase();
+        if (clienteMap.has(key)) {
+          clienteId = clienteMap.get(key)!;
+        } else {
+          const novo: Cliente = {
+            id: genId(), nome: nomeCli, tipo: ehPessoaJuridica(nomeCli) ? 'PJ' : 'PF',
+            cpfCnpj: '', email: '', celular: '', criadoEm: hoje,
+          };
+          novosClientes.push(novo);
+          clienteMap.set(key, novo.id);
+          clienteId = novo.id;
+        }
+      }
+
+      // Enriquecimento opcional via DataJud
+      let dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> = {};
+      let movs: Movimentacao[] = [];
+      if (enriquecerDataJud && REGEX_CNJ.test(linha.numero)) {
+        try {
+          const dj = await buscarDataJud(linha.numero);
+          const passivo = dj.partes.find(p => /passiv/i.test(p.polo))?.nome;
+          dados = {
+            tribunal: dj.tribunal,
+            vara: dj.orgaoJulgador,
+            area: inferirArea(dj.classe),
+            valorCausa: dj.valorCausa,
+            dataDistribuicao: dj.dataAjuizamento,
+            parteContraria: passivo || undefined,
+          };
+          movs = dj.movimentos.map(m => ({ id: genId(), data: m.data, tipo: 'DataJud', descricao: m.nome }));
+        } catch { /* segue sem enriquecer esta linha */ }
+        await new Promise(r => setTimeout(r, 250)); // rate-limit gentil com a API pública
+      }
+
+      const base = { ...emptyProcesso(), ...dados };
+      processos.push({
+        ...base,
+        numero: linha.numero,
+        clienteId,
+        parteContraria: linha.adverso || base.parteContraria || '',
+        tribunal: base.tribunal || linha.tribunal || '',
+        id: genId(),
+        movimentacoes: movs,
+        criadoEm: hoje,
+      });
+      setProgresso({ atual: i + 1, total: selecionadas.length });
+    }
+
+    // Persiste os novos clientes ANTES dos processos — a FK cliente_id exige
+    // que o cliente já exista no banco quando o processo é inserido.
+    if (novosClientes.length) {
+      await Promise.all(novosClientes.map(c => db.upsertCliente(c)));
+      dispatch({ type: 'IMPORT_CLIENTES', payload: novosClientes });
+    }
+    dispatch({ type: 'IMPORT_PROCESSOS', payload: processos });
+
+    setImportando(false);
+    toast.success(
+      `${processos.length} processo(s) importado(s)` +
+      (novosClientes.length ? ` · ${novosClientes.length} novo(s) cliente(s) criado(s)` : '')
+    );
+    onClose();
+  };
+
+  return (
+    <div className="space-y-3">
+      {!linhas ? (
+        <>
+          <div className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded p-2.5 space-y-1">
+            <p className="font-medium text-blue-800">Cole uma lista de processos — um por linha.</p>
+            <p>Aceita: tabela copiada do Integra/planilha (colunas separadas por tab), CSV com <code>;</code> ou <code>,</code>, ou só a lista de números CNJ. O sistema identifica <b>número, cliente e parte adversa</b>, cria os clientes que ainda não existem e cadastra tudo automaticamente.</p>
+          </div>
+          <Textarea
+            className="min-h-40 text-xs font-mono"
+            placeholder={`5065724-92.2016.4.04.7100\tAbraham Pocztaruk\t0\n0000820-82.2010.5.04.0761\tAdemir Silvestre\t0\tBraskem S/A\n1006792-10.2019.8.26.0576; Alexandre Andriewiski; Zanon & Zanon Ltda`}
+            value={texto}
+            onChange={e => setTexto(e.target.value)}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
+              <Upload size={12} /> Carregar .csv/.txt
+              <input type="file" accept=".csv,.txt,text/plain,text/csv" className="hidden" onChange={handleArquivo} />
+            </label>
+            <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={analisar} disabled={!texto.trim()}>
+              <ListPlus size={14} className="mr-1" /> Analisar lista
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="text-xs">
+              <span className="font-medium text-gray-800">{selecionadas.length}</span> de {linhas.length} processo(s) selecionado(s)
+              {novosClientesCount > 0 && (
+                <span className="text-blue-700 ml-2 inline-flex items-center gap-1"><Users size={11} /> {novosClientesCount} cliente(s) novo(s)</span>
+              )}
+            </div>
+            <Button size="sm" variant="ghost" className="h-6 text-xs text-gray-500" onClick={() => setLinhas(null)} disabled={importando}>
+              <X size={12} className="mr-1" /> Voltar
+            </Button>
+          </div>
+
+          <div className="max-h-72 overflow-y-auto border rounded">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr className="text-left text-gray-500">
+                  <th className="p-1.5 w-8"></th>
+                  <th className="p-1.5">Número</th>
+                  <th className="p-1.5">Cliente</th>
+                  <th className="p-1.5">Parte adversa</th>
+                  <th className="p-1.5 w-16">Tribunal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((l, idx) => {
+                  const clienteExiste = l.cliente && state.clientes.some(c => c.nome.trim().toLowerCase() === l.cliente.trim().toLowerCase());
+                  return (
+                    <tr key={idx} className={`border-t ${l.incluir ? '' : 'opacity-40'}`}>
+                      <td className="p-1.5 text-center">
+                        <input type="checkbox" checked={l.incluir} onChange={() => toggleLinha(idx)} className="accent-blue-600" />
+                      </td>
+                      <td className="p-1.5">
+                        <input className="w-full bg-transparent font-mono text-[11px] outline-none focus:bg-blue-50 rounded px-1" value={l.numero} onChange={e => editarCampo(idx, 'numero', e.target.value)} />
+                      </td>
+                      <td className="p-1.5">
+                        <div className="flex items-center gap-1">
+                          <input className="w-full bg-transparent outline-none focus:bg-blue-50 rounded px-1" value={l.cliente} onChange={e => editarCampo(idx, 'cliente', e.target.value)} />
+                          {l.cliente && (clienteExiste
+                            ? <span title="Cliente já cadastrado"><CheckCircle2 size={11} className="text-green-500 flex-shrink-0" /></span>
+                            : <span title="Cliente novo — será criado" className="text-[9px] bg-blue-100 text-blue-700 rounded px-1 flex-shrink-0">novo</span>)}
+                        </div>
+                      </td>
+                      <td className="p-1.5">
+                        <input className="w-full bg-transparent outline-none focus:bg-blue-50 rounded px-1" value={l.adverso} onChange={e => editarCampo(idx, 'adverso', e.target.value)} />
+                      </td>
+                      <td className="p-1.5 text-gray-500">{l.tribunal || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={enriquecerDataJud} onChange={e => setEnriquecerDataJud(e.target.checked)} className="accent-blue-600" disabled={importando} />
+            <Wifi size={12} className="text-blue-600" />
+            Enriquecer via DataJud (busca tribunal, vara, valor, data e movimentações de cada número CNJ)
+            <span className="text-gray-400">— mais lento</span>
+          </label>
+
+          {importando && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-gray-500">
+                <span>Importando... {progresso.atual}/{progresso.total}</span>
+                <span>{Math.round((progresso.atual / Math.max(progresso.total, 1)) * 100)}%</span>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded overflow-hidden">
+                <div className="h-full bg-blue-500 transition-all" style={{ width: `${(progresso.atual / Math.max(progresso.total, 1)) * 100}%` }} />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={onClose} disabled={importando}>Cancelar</Button>
+            <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={confirmar} disabled={importando || selecionadas.length === 0}>
+              {importando ? <Loader2 size={14} className="animate-spin mr-1" /> : <CheckCircle2 size={14} className="mr-1" />}
+              Importar {selecionadas.length} processo(s)
+            </Button>
+          </DialogFooter>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Processos() {
@@ -1060,6 +1362,7 @@ export default function Processos() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [datajudOpen, setDatajudOpen] = useState(false);
   const [importarIAOpen, setImportarIAOpen] = useState(false);
+  const [importarLoteOpen, setImportarLoteOpen] = useState(false);
   const [editProcesso, setEditProcesso] = useState<Processo | null>(null);
   const [viewProcesso, setViewProcesso] = useState<Processo | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -1120,6 +1423,9 @@ export default function Processos() {
           <p className="text-sm text-gray-500">{state.processos.length} processos cadastrados</p>
         </div>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarLoteOpen(true)}>
+            <ListPlus size={14} className="mr-1" /> Importar em Lote
+          </Button>
           <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarIAOpen(true)}>
             <Brain size={14} className="mr-1" /> Importar com IA
           </Button>
@@ -1193,6 +1499,18 @@ export default function Processos() {
           );
         })}
       </div>
+
+      {/* Dialog Importar em Lote */}
+      <Dialog open={importarLoteOpen} onOpenChange={setImportarLoteOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-[#1e3a5f] flex items-center gap-2">
+              <ListPlus size={16} className="text-blue-500" /> Importar Processos em Lote
+            </DialogTitle>
+          </DialogHeader>
+          {importarLoteOpen && <DialogImportarLote onClose={() => setImportarLoteOpen(false)} />}
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog Importar com IA */}
       <Dialog open={importarIAOpen} onOpenChange={setImportarIAOpen}>
