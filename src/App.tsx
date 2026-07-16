@@ -8,11 +8,12 @@ import Prazos from './components/Prazos';
 import Publicacoes from './components/Publicacoes';
 import Peticoes from './components/Peticoes';
 import Relatorios from './components/Relatorios';
+import Monitoramento from './components/Monitoramento';
 import Configuracoes from './components/Configuracoes';
 import { Toaster } from '@/components/ui/sonner';
-import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Menu, X, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Menu, X, ChevronRight, Bot } from 'lucide-react';
 
-type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'configuracoes';
+type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'monitoramento' | 'configuracoes';
 
 const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -21,6 +22,7 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
   { id: 'prazos', label: 'Agenda de Prazos', icon: Clock },
   { id: 'publicacoes', label: 'Publicações', icon: Bell },
   { id: 'peticoes', label: 'Petições', icon: FileText },
+  { id: 'monitoramento', label: 'Monitoramento', icon: Bot },
   { id: 'relatorios', label: 'Relatórios', icon: BarChart2 },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ];
@@ -54,7 +56,7 @@ function AppContent() {
   const pageComponents: Record<Page, React.ReactNode> = {
     dashboard: <Dashboard />, clientes: <Clientes />, processos: <Processos />,
     prazos: <Prazos />, publicacoes: <Publicacoes />, peticoes: <Peticoes />,
-    relatorios: <Relatorios />, configuracoes: <Configuracoes />,
+    monitoramento: <Monitoramento />, relatorios: <Relatorios />, configuracoes: <Configuracoes />,
   };
 
   return (

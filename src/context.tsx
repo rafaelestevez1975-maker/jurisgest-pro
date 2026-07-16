@@ -137,6 +137,7 @@ interface AppContextType {
   state: AppState;
   dispatch: React.Dispatch<Action>;
   loading: boolean;
+  reload: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -188,8 +189,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch { /* ignore */ }
   };
 
+  // Recarrega o estado do Supabase (usado após o robô rodar, por ex.)
+  const reload = async () => {
+    try {
+      const remote = await loadState();
+      baseDispatch({ type: 'SET_STATE', payload: remote });
+    } catch { /* mantém estado atual */ }
+  };
+
   return (
-    <AppContext.Provider value={{ state, dispatch, loading }}>
+    <AppContext.Provider value={{ state, dispatch, loading, reload }}>
       {children}
     </AppContext.Provider>
   );
