@@ -6,6 +6,14 @@
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* Impressão / PDF de relatórios: só o conteúdo do relatório */
+@media print {
+  header, nav, .no-print { display: none !important; }
+  body { background: #fff !important; }
+  main { max-width: none !important; padding: 0 !important; }
+  .print-area .break-inside-avoid { break-inside: avoid; box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

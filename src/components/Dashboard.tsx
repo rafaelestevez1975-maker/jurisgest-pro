@@ -2,7 +2,7 @@ import { useApp } from '../context';
 import { diasRestantes } from '../data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Users, Briefcase, Clock, Bell, AlertTriangle, CheckCircle, TrendingUp } from 'lucide-react';
+import { Users, Briefcase, Clock, Bell, AlertTriangle, CheckCircle, TrendingUp, Scale, Activity, DollarSign } from 'lucide-react';
 
 function urgencyColor(dias: number) {
   if (dias < 0) return 'bg-gray-100 text-gray-600';
@@ -41,6 +41,22 @@ export default function Dashboard() {
 
   const processosPorArea: Record<string, number> = {};
   processos.forEach(p => { processosPorArea[p.area] = (processosPorArea[p.area] || 0) + 1; });
+  const areasOrdenadas = Object.entries(processosPorArea).sort((a, b) => b[1] - a[1]);
+  const maxArea = Math.max(...Object.values(processosPorArea), 1);
+
+  const valorCausasAtivas = processos.filter(p => p.status === 'ativo').reduce((s, p) => s + (p.valorCausa ?? 0), 0);
+  const totalAndamentos = processos.reduce((s, p) => s + p.movimentacoes.length, 0);
+
+  const andamentosRecentes = processos
+    .flatMap(p => p.movimentacoes.map(m => ({ ...m, numero: p.numero })))
+    .sort((a, b) => (b.data || '').localeCompare(a.data || ''))
+    .slice(0, 6);
+
+  const fmtData = (d: string) => {
+    if (!d) return '—';
+    const [a, m, dia] = d.split('T')[0].split('-');
+    return dia ? `${dia}/${m}/${a}` : d;
+  };
 
   const pubsRecentes = [...publicacoes].sort((a, b) => b.data.localeCompare(a.data)).slice(0, 3);
 
@@ -94,6 +110,37 @@ export default function Dashboard() {
                 <p className="text-3xl font-bold text-[#1e3a5f]">{intimacoesPendentes}</p>
               </div>
               <Bell className="text-red-500 opacity-80" size={32} />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Faixa de resumo */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0"><DollarSign size={18} className="text-green-600" /></div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-gray-500 uppercase tracking-wide">Valor em causas ativas</p>
+              <p className="text-lg font-bold text-[#1e3a5f] truncate">{valorCausasAtivas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0"><Activity size={18} className="text-blue-600" /></div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-gray-500 uppercase tracking-wide">Andamentos capturados</p>
+              <p className="text-lg font-bold text-[#1e3a5f]">{totalAndamentos}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="col-span-2 lg:col-span-1">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0"><Briefcase size={18} className="text-indigo-600" /></div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total de processos</p>
+              <p className="text-lg font-bold text-[#1e3a5f]">{processos.length}</p>
             </div>
           </CardContent>
         </Card>
@@ -154,6 +201,54 @@ export default function Dashboard() {
                 <span className="text-xs font-bold text-gray-700 w-4 text-right">{item.value}</span>
               </div>
             ))}
+          </CardContent>
+        </Card>
+
+        {/* Processos por Área */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold text-[#1e3a5f] flex items-center gap-2">
+              <Scale size={16} className="text-[#2563eb]" /> Processos por Área
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {areasOrdenadas.length === 0 ? (
+              <p className="text-sm text-gray-500">Nenhum processo.</p>
+            ) : areasOrdenadas.map(([area, n]) => (
+              <div key={area} className="flex items-center gap-3">
+                <span className="text-xs w-24 text-gray-600 capitalize truncate">{area}</span>
+                <div className="flex-1 bg-gray-100 rounded-full h-2">
+                  <div className="bg-[#2563eb] h-2 rounded-full transition-all" style={{ width: `${(n / maxArea) * 100}%` }} />
+                </div>
+                <span className="text-xs font-bold text-gray-700 w-5 text-right">{n}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Andamentos Recentes */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold text-[#1e3a5f] flex items-center gap-2">
+              <Activity size={16} className="text-blue-600" /> Andamentos Recentes
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {andamentosRecentes.length === 0 ? (
+              <p className="text-sm text-gray-500 px-4 pb-4">Nenhum andamento capturado ainda.</p>
+            ) : (
+              <div className="divide-y">
+                {andamentosRecentes.map(m => (
+                  <div key={m.id} className="px-4 py-2.5 flex items-start gap-2">
+                    <span className="text-[11px] font-mono text-gray-400 flex-shrink-0 mt-0.5">{fmtData(m.data)}</span>
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-700 truncate">{m.descricao}</p>
+                      <p className="text-[10px] font-mono text-blue-600 truncate">{m.numero}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

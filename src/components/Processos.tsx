@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApp, genId } from '../context';
 import { db } from '../lib/db';
-import type { Processo, Cliente, AreaDireito, FaseProcessual, StatusProcesso, Movimentacao } from '../types';
+import type { Processo, Cliente, AreaDireito, FaseProcessual, StatusProcesso, PoloProcesso, Movimentacao } from '../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -808,7 +808,7 @@ const statusColor: Record<StatusProcesso, string> = {
 const emptyProcesso = (): Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'> => ({
   numero: '', clienteId: '', vara: '', tribunal: '', comarca: '', area: 'cível',
   fase: 'conhecimento', parteContraria: '', advogadoResponsavel: '', valorCausa: undefined,
-  dataDistribuicao: '', status: 'ativo', observacoes: '',
+  dataDistribuicao: '', status: 'ativo', polo: 'autor', objeto: '', observacoes: '',
 });
 
 function ProcessoForm({ initial, onSave, onCancel }: {
@@ -882,9 +882,24 @@ function ProcessoForm({ initial, onSave, onCancel }: {
           <Label className="text-xs">Data de Distribuição</Label>
           <Input className="mt-1 h-8 text-sm" type="date" value={form.dataDistribuicao} onChange={e => set('dataDistribuicao', e.target.value)} />
         </div>
-        <div className="col-span-2">
+        <div>
+          <Label className="text-xs">Polo do Cliente</Label>
+          <Select value={form.polo} onValueChange={v => set('polo', v as PoloProcesso)}>
+            <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="autor">Autor / Requerente</SelectItem>
+              <SelectItem value="réu">Réu / Requerido</SelectItem>
+              <SelectItem value="outro">Outro</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
           <Label className="text-xs">Parte Contrária</Label>
           <Input className="mt-1 h-8 text-sm" value={form.parteContraria} onChange={e => set('parteContraria', e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Objeto / Assunto da Ação</Label>
+          <Input className="mt-1 h-8 text-sm" value={form.objeto} onChange={e => set('objeto', e.target.value)} placeholder="Ex: cobrança, rescisão contratual, danos morais..." />
         </div>
         <div>
           <Label className="text-xs">Advogado Responsável</Label>
@@ -989,7 +1004,9 @@ function ProcessoDetalhe({ processo, onClose: _onClose }: { processo: Processo; 
               ['Vara/Juízo', processo.vara],
               ['Área', processo.area],
               ['Fase', processo.fase],
+              ['Cliente é', processo.polo],
               ['Parte Contrária', processo.parteContraria],
+              ['Objeto', processo.objeto],
               ['Advogado', processo.advogadoResponsavel],
               ['Distribuição', processo.dataDistribuicao],
               ['Valor da Causa', processo.valorCausa ? `R$ ${processo.valorCausa.toLocaleString('pt-BR')}` : '—'],
@@ -1410,9 +1427,9 @@ export default function Processos() {
   const tribunaisUnicos = [...new Set(state.processos.map(p => p.tribunal))];
 
   const initialForm = editProcesso
-    ? { numero: editProcesso.numero, clienteId: editProcesso.clienteId, vara: editProcesso.vara, tribunal: editProcesso.tribunal, comarca: editProcesso.comarca, area: editProcesso.area, fase: editProcesso.fase, parteContraria: editProcesso.parteContraria, advogadoResponsavel: editProcesso.advogadoResponsavel, valorCausa: editProcesso.valorCausa, dataDistribuicao: editProcesso.dataDistribuicao, status: editProcesso.status, observacoes: editProcesso.observacoes }
+    ? { numero: editProcesso.numero, clienteId: editProcesso.clienteId, vara: editProcesso.vara, tribunal: editProcesso.tribunal, comarca: editProcesso.comarca, area: editProcesso.area, fase: editProcesso.fase, parteContraria: editProcesso.parteContraria, advogadoResponsavel: editProcesso.advogadoResponsavel, valorCausa: editProcesso.valorCausa, dataDistribuicao: editProcesso.dataDistribuicao, status: editProcesso.status, polo: editProcesso.polo, objeto: editProcesso.objeto, observacoes: editProcesso.observacoes }
     : prefill
-      ? { numero: prefill.numero, clienteId: prefill.clienteId, vara: prefill.vara, tribunal: prefill.tribunal, comarca: prefill.comarca, area: prefill.area, fase: prefill.fase, parteContraria: prefill.parteContraria, advogadoResponsavel: prefill.advogadoResponsavel || '', valorCausa: prefill.valorCausa, dataDistribuicao: prefill.dataDistribuicao, status: prefill.status, observacoes: prefill.observacoes }
+      ? { numero: prefill.numero, clienteId: prefill.clienteId, vara: prefill.vara, tribunal: prefill.tribunal, comarca: prefill.comarca, area: prefill.area, fase: prefill.fase, parteContraria: prefill.parteContraria, advogadoResponsavel: prefill.advogadoResponsavel || '', valorCausa: prefill.valorCausa, dataDistribuicao: prefill.dataDistribuicao, status: prefill.status, polo: prefill.polo ?? 'autor', objeto: prefill.objeto ?? '', observacoes: prefill.observacoes }
       : emptyProcesso();
 
   return (

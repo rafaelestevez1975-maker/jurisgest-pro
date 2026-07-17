@@ -75,6 +75,8 @@ function toProcesso(r: Record<string, unknown>, movs: Movimentacao[] = []): Proc
     valorCausa: r.valor_causa as number | undefined,
     dataDistribuicao: (r.data_distribuicao as string) ?? '',
     status: r.status as Processo['status'],
+    polo: (r.polo as Processo['polo']) ?? 'outro',
+    objeto: (r.objeto as string) ?? '',
     movimentacoes: movs,
     observacoes: r.observacoes as string | undefined,
     criadoEm: r.criado_em as string,
@@ -96,6 +98,8 @@ function fromProcesso(p: Processo) {
     valor_causa: p.valorCausa ?? null,
     data_distribuicao: p.dataDistribuicao || null,
     status: p.status,
+    polo: p.polo ?? 'outro',
+    objeto: p.objeto ?? '',
     observacoes: p.observacoes ?? null,
     criado_em: p.criadoEm,
   };

@@ -2,6 +2,7 @@ export type TipoPessoa = 'PF' | 'PJ';
 export type StatusProcesso = 'ativo' | 'arquivado' | 'ganho' | 'perdido' | 'acordo';
 export type AreaDireito = 'cível' | 'trabalhista' | 'criminal' | 'previdenciário' | 'família' | 'tributário' | 'empresarial' | 'administrativo' | 'outro';
 export type FaseProcessual = 'conhecimento' | 'recursal' | 'execução' | 'outro';
+export type PoloProcesso = 'autor' | 'réu' | 'outro';
 export type TipoPrazo = 'audiência' | 'prazo_fatal' | 'prazo_dilatório' | 'diligência' | 'reunião' | 'outro';
 export type StatusPrazo = 'pendente' | 'cumprido' | 'cancelado';
 export type StatusPublicacao = 'não_lida' | 'lida' | 'prazo_gerado' | 'arquivada';
@@ -49,6 +50,8 @@ export interface Processo {
   valorCausa?: number;
   dataDistribuicao: string;
   status: StatusProcesso;
+  polo: PoloProcesso;
+  objeto: string;
   movimentacoes: Movimentacao[];
   observacoes?: string;
   criadoEm: string;
