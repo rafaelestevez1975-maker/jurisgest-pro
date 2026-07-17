@@ -33,6 +33,13 @@ const statusColor: Record<StatusPublicacao, string> = {
   'arquivada': 'bg-slate-100 text-slate-500',
 };
 
+const statusLabel: Record<StatusPublicacao, string> = {
+  'não_lida': 'não lida',
+  'lida': 'lida',
+  'prazo_gerado': 'agendada',
+  'arquivada': 'arquivada',
+};
+
 function ImportCSVPub({ onImport, onClose }: { onImport: (pubs: Omit<Publicacao, 'id' | 'criadoEm'>[]) => void; onClose: () => void }) {
   const [preview, setPreview] = useState<Omit<Publicacao, 'id' | 'criadoEm'>[]>([]);
 
@@ -88,6 +95,7 @@ function ImportCSVPub({ onImport, onClose }: { onImport: (pubs: Omit<Publicacao,
 export default function Publicacoes() {
   const { state, dispatch } = useApp();
   const [filterStatus, setFilterStatus] = useState<string>('ativas');
+  const [filterTribunal, setFilterTribunal] = useState<string>('todos');
   const [search, setSearch] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -104,6 +112,7 @@ export default function Publicacoes() {
     } else if (filterStatus !== 'todos') {
       if (p.status !== filterStatus) return false;
     }
+    if (filterTribunal !== 'todos' && p.tribunal !== filterTribunal) return false;
     const matchSearch = !search ||
       p.tribunal.toLowerCase().includes(search.toLowerCase()) ||
       p.numeroProcesso.includes(search) ||
@@ -161,11 +170,30 @@ export default function Publicacoes() {
     toast.success(`${novas.length} publicações importadas!`);
   };
 
-  const limparFiltros = () => { setDataInicio(''); setDataFim(''); setSearch(''); setFilterStatus('ativas'); };
+  const limparFiltros = () => { setDataInicio(''); setDataFim(''); setSearch(''); setFilterStatus('ativas'); setFilterTribunal('todos'); };
 
-  const naoLidas = state.publicacoes.filter(p => p.status === 'não_lida').length;
-  const arquivadas = state.publicacoes.filter(p => p.status === 'arquivada').length;
-  const temFiltro = dataInicio || dataFim || search || filterStatus !== 'ativas';
+  const pubs = state.publicacoes;
+  const contagem = {
+    ativas: pubs.filter(p => p.status !== 'arquivada').length,
+    'não_lida': pubs.filter(p => p.status === 'não_lida').length,
+    lida: pubs.filter(p => p.status === 'lida').length,
+    prazo_gerado: pubs.filter(p => p.status === 'prazo_gerado').length,
+    arquivada: pubs.filter(p => p.status === 'arquivada').length,
+    todos: pubs.length,
+  };
+  const naoLidas = contagem['não_lida'];
+  const arquivadas = contagem.arquivada;
+  const tribunaisUnicos = [...new Set(pubs.map(p => p.tribunal).filter(Boolean))].sort();
+  const temFiltro = !!(dataInicio || dataFim || search || filterStatus !== 'ativas' || filterTribunal !== 'todos');
+
+  const CHIPS: { id: string; label: string; count: number; hex: string }[] = [
+    { id: 'ativas', label: 'Ativas', count: contagem.ativas, hex: '#1e3a5f' },
+    { id: 'não_lida', label: 'Não lidas', count: contagem['não_lida'], hex: '#dc2626' },
+    { id: 'lida', label: 'Lidas', count: contagem.lida, hex: '#4b5563' },
+    { id: 'prazo_gerado', label: 'Agendadas', count: contagem.prazo_gerado, hex: '#16a34a' },
+    { id: 'arquivada', label: 'Arquivadas', count: contagem.arquivada, hex: '#64748b' },
+    { id: 'todos', label: 'Todas', count: contagem.todos, hex: '#2563eb' },
+  ];
 
   return (
     <div className="space-y-5">
@@ -189,51 +217,68 @@ export default function Publicacoes() {
         </TabsList>
 
         <TabsContent value="publicacoes" className="mt-4 space-y-4">
-          {/* Filtros */}
-          <div className="bg-gray-50 border rounded-lg p-3 space-y-2">
-            <div className="flex gap-2 flex-wrap items-end">
-              <div className="flex-1 min-w-48">
-                <Label className="text-[10px] text-gray-400 uppercase">Busca</Label>
-                <Input className="h-8 text-sm mt-1" placeholder="Tribunal, nº processo, conteúdo..." value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-              <div>
-                <Label className="text-[10px] text-gray-400 uppercase">Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="h-8 text-xs w-36 mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ativas">Ativas (todas)</SelectItem>
-                    <SelectItem value="não_lida">Não lidas</SelectItem>
-                    <SelectItem value="lida">Lidas</SelectItem>
-                    <SelectItem value="prazo_gerado">Prazo gerado</SelectItem>
-                    <SelectItem value="arquivada">Arquivadas</SelectItem>
-                    <SelectItem value="todos">Todas (inc. arquivadas)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex gap-2 flex-wrap items-end">
-              <div>
-                <Label className="text-[10px] text-gray-400 uppercase">Publicado de</Label>
-                <Input type="date" className="h-8 text-xs mt-1 w-36" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
-              </div>
-              <div>
-                <Label className="text-[10px] text-gray-400 uppercase">até</Label>
-                <Input type="date" className="h-8 text-xs mt-1 w-36" value={dataFim} onChange={e => setDataFim(e.target.value)} />
-              </div>
-              {temFiltro && (
-                <Button variant="ghost" size="sm" className="h-8 text-xs text-gray-500 mt-auto" onClick={limparFiltros}>
-                  Limpar filtros
-                </Button>
-              )}
-            </div>
+          {/* Chips de status (com contadores) */}
+          <div className="flex flex-wrap gap-2">
+            {CHIPS.map(chip => {
+              const active = filterStatus === chip.id;
+              return (
+                <button
+                  key={chip.id}
+                  onClick={() => setFilterStatus(chip.id)}
+                  style={active ? { backgroundColor: chip.hex, borderColor: 'transparent', color: '#fff' } : undefined}
+                  className={`h-8 px-3 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5
+                    ${active ? '' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
+                >
+                  {chip.label}
+                  <span
+                    style={active ? { backgroundColor: 'rgba(255,255,255,0.25)' } : undefined}
+                    className={`inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-bold ${active ? '' : 'bg-black/10'}`}
+                  >
+                    {chip.count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Resultado dos filtros */}
-          {(dataInicio || dataFim) && (
-            <p className="text-xs text-gray-500">
-              {filtered.length} publicação(ões) no período{dataInicio ? ` de ${dataInicio}` : ''}{dataFim ? ` até ${dataFim}` : ''}
-            </p>
-          )}
+          {/* Busca + tribunal + período */}
+          <div className="bg-gray-50 border rounded-lg p-3 flex gap-2 flex-wrap items-end">
+            <div className="flex-1 min-w-48">
+              <Label className="text-[10px] text-gray-400 uppercase">Busca</Label>
+              <Input className="h-8 text-sm mt-1" placeholder="Tribunal, nº processo, conteúdo..." value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-[10px] text-gray-400 uppercase">Tribunal</Label>
+              <Select value={filterTribunal} onValueChange={setFilterTribunal}>
+                <SelectTrigger className="h-8 text-xs w-32 mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  {tribunaisUnicos.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-[10px] text-gray-400 uppercase">Publicado de</Label>
+              <Input type="date" className="h-8 text-xs mt-1 w-36" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-[10px] text-gray-400 uppercase">até</Label>
+              <Input type="date" className="h-8 text-xs mt-1 w-36" value={dataFim} onChange={e => setDataFim(e.target.value)} />
+            </div>
+            {temFiltro && (
+              <Button variant="ghost" size="sm" className="h-8 text-xs text-gray-500" onClick={limparFiltros}>
+                Limpar
+              </Button>
+            )}
+          </div>
+
+          {/* Contador de resultados */}
+          <p className="text-xs text-gray-500">
+            {filtered.length} {filtered.length === 1 ? 'publicação' : 'publicações'}
+            {filterStatus !== 'todos' && filterStatus !== 'ativas' && ` · ${CHIPS.find(c => c.id === filterStatus)?.label.toLowerCase()}`}
+            {filterTribunal !== 'todos' && ` · ${filterTribunal}`}
+            {(dataInicio || dataFim) && ` · período${dataInicio ? ` de ${dataInicio}` : ''}${dataFim ? ` até ${dataFim}` : ''}`}
+          </p>
 
           <div className="space-y-3">
             {filtered.length === 0 && (
@@ -264,7 +309,7 @@ export default function Publicacoes() {
                             <span className="text-xs font-bold text-[#2563eb]">{pub.tribunal}</span>
                             <span className="text-xs font-mono text-gray-600">{pub.numeroProcesso}</span>
                             <span className="text-xs text-gray-400">{pub.data}</span>
-                            <Badge className={`${statusColor[pub.status]} text-[10px] px-1.5`}>{pub.status.replace('_', ' ')}</Badge>
+                            <Badge className={`${statusColor[pub.status]} text-[10px] px-1.5`}>{statusLabel[pub.status]}</Badge>
                           </div>
                           <p className="text-xs text-gray-700 line-clamp-3">{pub.conteudo}</p>
                           {proc && <p className="text-xs text-blue-600 mt-1">↳ Vinculado: {proc.numero.slice(0, 20)}...</p>}
