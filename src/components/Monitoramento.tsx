@@ -53,6 +53,7 @@ export default function Monitoramento() {
   const [historico, setHistorico] = useState<Sincronizacao[]>([]);
   const [partes, setPartes] = useState<ParteMonitorada[]>([]);
   const [running, setRunning] = useState(false);
+  const [capturandoIntim, setCapturandoIntim] = useState(false);
   const [buscandoId, setBuscandoId] = useState<string | null>(null);
   const [tokenLocal, setTokenLocal] = useState('');
   const [showToken, setShowToken] = useState(false);
@@ -124,6 +125,23 @@ export default function Monitoramento() {
       toast.error('Falha na busca: ' + ((e as Error)?.message || e));
     }
     setBuscandoId(null);
+  };
+
+  const capturarIntimacoes = async () => {
+    setCapturandoIntim(true);
+    toast.info('Consultando o Diário de Justiça Nacional (CNJ)…');
+    try {
+      const { data, error } = await supabase.functions.invoke('capturar-intimacoes', { body: { dias: 30 } });
+      if (error) throw error;
+      if (data?.erro) { toast.error(data.mensagem || 'Falha na captura.'); }
+      else {
+        toast.success(`${data.novas_intimacoes} intimação(ões) nova(s) capturada(s) do CNJ.`);
+        await Promise.all([carregar(), reload()]);
+      }
+    } catch (e) {
+      toast.error('Falha ao capturar intimações: ' + ((e as Error)?.message || e));
+    }
+    setCapturandoIntim(false);
   };
 
   const procuradores = partes.filter(p => p.categoria === 'procurador');
@@ -257,7 +275,7 @@ export default function Monitoramento() {
         <CardContent className="space-y-4">
           <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2.5">
             <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
-            <p><b>Importante:</b> o DataJud gratuito do CNJ <b>não</b> indexa nomes (nem de partes nem de advogados) — só busca por número. Para localizar processos e publicações por <b>nome do procurador/OAB</b> ou por <b>nome do cliente</b> em todo o Brasil é preciso um provedor pago que indexa esses dados (ex.: <b>Escavador</b>, com crédito grátis de teste). Cole o token abaixo para ativar. Os processos encontrados são cadastrados automaticamente e passam a ser monitorados pelo robô do DataJud.</p>
+            <p><b>Como funciona:</b> as <b>intimações pela sua OAB</b> vêm de graça do CNJ (DJEN, botão verde abaixo). Já <b>descobrir todos os processos por nome</b> (do cliente ou seu) exige um provedor pago que indexa as partes (ex.: <b>Escavador</b>, com crédito grátis de teste) — cole o token abaixo para ativar essa parte. Os processos encontrados são cadastrados e monitorados pelo robô do DataJud.</p>
           </div>
 
           {/* Token */}
@@ -291,6 +309,19 @@ export default function Monitoramento() {
           <div>
             <p className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1"><Gavel size={13} className="text-[#1e3a5f]" /> Procuradores — monitorar por MEU nome / OAB</p>
             <p className="text-[11px] text-gray-400 mb-2">Localiza os processos e publicações em que você atua como advogado, em todos os tribunais.</p>
+
+            {/* Captura GRATUITA de intimações via CNJ */}
+            <div className="bg-green-50 border border-green-200 rounded p-2.5 mb-2 flex items-start gap-2">
+              <CheckCircle2 size={15} className="text-green-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-green-800"><b>Intimações grátis pelo CNJ:</b> captura as intimações publicadas no Diário de Justiça Eletrônico Nacional (DJEN) pela OAB dos procuradores — <b>sem custo</b>, sem provedor pago. Roda automaticamente 2×/dia.</p>
+                <Button size="sm" className="mt-2 h-8 text-xs bg-green-600 hover:bg-green-700" onClick={capturarIntimacoes} disabled={capturandoIntim}>
+                  {capturandoIntim ? <Loader2 size={13} className="animate-spin mr-1" /> : <Play size={13} className="mr-1" />}
+                  Capturar intimações agora (grátis)
+                </Button>
+              </div>
+            </div>
+
             <div className="border rounded divide-y">
               {procuradores.map(p => (
                 <div key={p.id} className="flex items-center justify-between gap-3 p-3">
