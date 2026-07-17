@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { AppProvider, useApp } from './context';
+import { supabase } from './lib/supabase';
 import { diasRestantes } from './data';
+import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Clientes from './components/Clientes';
 import Processos from './components/Processos';
@@ -12,7 +15,7 @@ import Monitoramento from './components/Monitoramento';
 import Configuracoes from './components/Configuracoes';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
-import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Menu, X, ChevronRight, Bot } from 'lucide-react';
+import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Menu, X, ChevronRight, Bot, LogOut } from 'lucide-react';
 
 type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'monitoramento' | 'configuracoes';
 
@@ -93,7 +96,13 @@ function AppContent() {
             );
           })}
         </nav>
-        <div className="p-4 border-t border-white/10">
+        <div className="p-3 border-t border-white/10 space-y-2">
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-blue-100 hover:bg-white/10 hover:text-white rounded transition-colors"
+          >
+            <LogOut size={14} /> Sair
+          </button>
           <p className="text-[10px] text-blue-300 text-center">JurisGest Pro v1.0</p>
         </div>
       </aside>
@@ -125,15 +134,39 @@ function AppContent() {
   );
 }
 
+function AuthGate() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [checando, setChecando] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setChecando(false); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  if (checando) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (!session) return <Login />;
+
+  return (
+    <AppProvider>
+      <ErrorBoundary>
+        <AppContent />
+      </ErrorBoundary>
+      <Toaster position="top-right" richColors />
+    </AppProvider>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <ErrorBoundary>
-          <AppContent />
-        </ErrorBoundary>
-        <Toaster position="top-right" richColors />
-      </AppProvider>
+      <AuthGate />
     </ErrorBoundary>
   );
 }
