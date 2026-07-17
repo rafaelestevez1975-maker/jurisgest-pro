@@ -96,6 +96,7 @@ export default function Publicacoes() {
   const { state, dispatch } = useApp();
   const [filterStatus, setFilterStatus] = useState<string>('ativas');
   const [filterTribunal, setFilterTribunal] = useState<string>('todos');
+  const [filterVinculo, setFilterVinculo] = useState<string>('todos');
   const [search, setSearch] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -113,6 +114,8 @@ export default function Publicacoes() {
       if (p.status !== filterStatus) return false;
     }
     if (filterTribunal !== 'todos' && p.tribunal !== filterTribunal) return false;
+    if (filterVinculo === 'vinculadas' && !p.processoId) return false;
+    if (filterVinculo === 'nao_vinculadas' && p.processoId) return false;
     const matchSearch = !search ||
       p.tribunal.toLowerCase().includes(search.toLowerCase()) ||
       p.numeroProcesso.includes(search) ||
@@ -170,7 +173,7 @@ export default function Publicacoes() {
     toast.success(`${novas.length} publicações importadas!`);
   };
 
-  const limparFiltros = () => { setDataInicio(''); setDataFim(''); setSearch(''); setFilterStatus('ativas'); setFilterTribunal('todos'); };
+  const limparFiltros = () => { setDataInicio(''); setDataFim(''); setSearch(''); setFilterStatus('ativas'); setFilterTribunal('todos'); setFilterVinculo('todos'); };
 
   const pubs = state.publicacoes;
   const contagem = {
@@ -184,7 +187,7 @@ export default function Publicacoes() {
   const naoLidas = contagem['não_lida'];
   const arquivadas = contagem.arquivada;
   const tribunaisUnicos = [...new Set(pubs.map(p => p.tribunal).filter(Boolean))].sort();
-  const temFiltro = !!(dataInicio || dataFim || search || filterStatus !== 'ativas' || filterTribunal !== 'todos');
+  const temFiltro = !!(dataInicio || dataFim || search || filterStatus !== 'ativas' || filterTribunal !== 'todos' || filterVinculo !== 'todos');
 
   const CHIPS: { id: string; label: string; count: number; hex: string }[] = [
     { id: 'ativas', label: 'Ativas', count: contagem.ativas, hex: '#1e3a5f' },
@@ -258,6 +261,17 @@ export default function Publicacoes() {
               </Select>
             </div>
             <div>
+              <Label className="text-[10px] text-gray-400 uppercase">Vínculo</Label>
+              <Select value={filterVinculo} onValueChange={setFilterVinculo}>
+                <SelectTrigger className="h-8 text-xs w-36 mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas</SelectItem>
+                  <SelectItem value="vinculadas">Vinculadas a processo</SelectItem>
+                  <SelectItem value="nao_vinculadas">Não vinculadas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-[10px] text-gray-400 uppercase">Publicado de</Label>
               <Input type="date" className="h-8 text-xs mt-1 w-36" value={dataInicio} onChange={e => setDataInicio(e.target.value)} />
             </div>
@@ -277,6 +291,8 @@ export default function Publicacoes() {
             {filtered.length} {filtered.length === 1 ? 'publicação' : 'publicações'}
             {filterStatus !== 'todos' && filterStatus !== 'ativas' && ` · ${CHIPS.find(c => c.id === filterStatus)?.label.toLowerCase()}`}
             {filterTribunal !== 'todos' && ` · ${filterTribunal}`}
+            {filterVinculo === 'vinculadas' && ' · vinculadas a processo'}
+            {filterVinculo === 'nao_vinculadas' && ' · não vinculadas'}
             {(dataInicio || dataFim) && ` · período${dataInicio ? ` de ${dataInicio}` : ''}${dataFim ? ` até ${dataFim}` : ''}`}
           </p>
 

@@ -15,7 +15,7 @@ import Monitoramento from './components/Monitoramento';
 import Configuracoes from './components/Configuracoes';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
-import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Menu, X, ChevronRight, Bot, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Bot, LogOut } from 'lucide-react';
 
 type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'monitoramento' | 'configuracoes';
 
@@ -34,7 +34,6 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
 function AppContent() {
   const { state, loading } = useApp();
   const [page, setPage] = useState<Page>('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (loading) {
     return (
@@ -55,7 +54,7 @@ function AppContent() {
     prazos: prazosUrgentes || undefined,
   } as Partial<Record<Page, number>>;
 
-  const navigate = (p: Page) => { setPage(p); setSidebarOpen(false); };
+  const navigate = (p: Page) => { setPage(p); window.scrollTo({ top: 0 }); };
 
   const pageComponents: Record<Page, React.ReactNode> = {
     dashboard: <Dashboard />, clientes: <Clientes />, processos: <Processos />,
@@ -64,72 +63,59 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-      <aside className={`fixed top-0 left-0 h-full w-64 bg-[#1e3a5f] text-white z-30 transition-transform duration-200 flex flex-col
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:flex`}>
-        <div className="p-4 border-b border-white/10">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-bold text-sm leading-tight">{state.escritorio.nome || 'JurisGest Pro'}</p>
-              <p className="text-xs text-blue-200 mt-0.5">{state.escritorio.oab}</p>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Barra superior: marca + ações */}
+      <header className="bg-[#1e3a5f] text-white sticky top-0 z-20 shadow-sm">
+        <div className="flex items-center justify-between px-4 h-14">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-md bg-white/10 flex items-center justify-center flex-shrink-0">
+              <Scale size={17} className="text-white" />
             </div>
-            <button className="lg:hidden text-white/60 hover:text-white" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
+            <div className="min-w-0">
+              <p className="font-bold text-sm leading-tight truncate">{state.escritorio.nome || 'JurisGest Pro'}</p>
+              {state.escritorio.oab && <p className="text-[11px] text-blue-200 leading-tight truncate">{state.escritorio.oab}</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {prazosUrgentes > 0 && (
+              <button onClick={() => navigate('prazos')} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-2.5 py-1 text-xs text-white transition-colors">
+                <Clock size={12} /><span className="hidden sm:inline">{prazosUrgentes} urgente(s)</span><span className="sm:hidden">{prazosUrgentes}</span>
+              </button>
+            )}
+            {naoLidas > 0 && (
+              <button onClick={() => navigate('publicacoes')} className="relative text-blue-100 hover:text-white transition-colors">
+                <Bell size={18} />
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">{naoLidas}</span>
+              </button>
+            )}
+            <button onClick={() => supabase.auth.signOut()} className="flex items-center gap-1.5 text-xs text-blue-100 hover:text-white hover:bg-white/10 rounded px-2 py-1.5 transition-colors">
+              <LogOut size={14} /><span className="hidden sm:inline">Sair</span>
+            </button>
           </div>
         </div>
-        <nav className="flex-1 py-3 overflow-y-auto">
+        {/* Menu horizontal */}
+        <nav className="flex items-stretch px-2 overflow-x-auto border-t border-white/10 no-scrollbar">
           {navItems.map(item => {
             const Icon = item.icon;
             const badge = badges[item.id];
             const active = page === item.id;
             return (
               <button key={item.id} onClick={() => navigate(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors relative
-                  ${active ? 'bg-white/15 text-white font-semibold' : 'text-blue-100 hover:bg-white/10 hover:text-white'}`}>
-                {active && <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-white rounded-r" />}
-                <Icon size={16} className={active ? 'text-white' : 'text-blue-300'} />
-                <span className="flex-1 text-left">{item.label}</span>
+                className={`flex items-center gap-2 px-3.5 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors
+                  ${active ? 'border-white text-white font-semibold bg-white/5' : 'border-transparent text-blue-100 hover:text-white hover:bg-white/5'}`}>
+                <Icon size={15} className={active ? 'text-white' : 'text-blue-300'} />
+                <span>{item.label}</span>
                 {badge ? (
-                  <span className="bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{badge > 9 ? '9+' : badge}</span>
-                ) : active ? <ChevronRight size={12} className="text-white/40" /> : null}
+                  <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">{badge > 9 ? '9+' : badge}</span>
+                ) : null}
               </button>
             );
           })}
         </nav>
-        <div className="p-3 border-t border-white/10 space-y-2">
-          <button
-            onClick={() => supabase.auth.signOut()}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs text-blue-100 hover:bg-white/10 hover:text-white rounded transition-colors"
-          >
-            <LogOut size={14} /> Sair
-          </button>
-          <p className="text-[10px] text-blue-300 text-center">JurisGest Pro v1.0</p>
-        </div>
-      </aside>
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button className="lg:hidden text-gray-500 hover:text-gray-700" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
-            <p className="font-semibold text-[#1e3a5f] text-sm capitalize">{navItems.find(n => n.id === page)?.label || page}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {prazosUrgentes > 0 && (
-              <button onClick={() => navigate('prazos')} className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-full px-3 py-1 text-xs text-red-700 hover:bg-red-100 transition-colors">
-                <Clock size={12} /><span>{prazosUrgentes} urgente(s)</span>
-              </button>
-            )}
-            {naoLidas > 0 && (
-              <button onClick={() => navigate('publicacoes')} className="relative text-gray-500 hover:text-[#2563eb] transition-colors">
-                <Bell size={18} />
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">{naoLidas}</span>
-              </button>
-            )}
-          </div>
-        </header>
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
-          {pageComponents[page]}
-        </main>
-      </div>
+      </header>
+      <main className="flex-1 w-full max-w-[1500px] mx-auto p-4 lg:p-6 overflow-auto">
+        {pageComponents[page]}
+      </main>
     </div>
   );
 }
