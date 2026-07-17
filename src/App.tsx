@@ -23,7 +23,7 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'clientes', label: 'Clientes', icon: Users },
   { id: 'processos', label: 'Processos', icon: Scale },
-  { id: 'prazos', label: 'Agenda de Prazos', icon: Clock },
+  { id: 'prazos', label: 'Agenda', icon: Clock },
   { id: 'publicacoes', label: 'Publicações', icon: Bell },
   { id: 'peticoes', label: 'Petições', icon: FileText },
   { id: 'monitoramento', label: 'Monitoramento', icon: Bot },
