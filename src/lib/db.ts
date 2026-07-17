@@ -273,14 +273,18 @@ export const db = {
 
   // processos
   upsertProcesso: async (p: Processo) => {
-    await supabase.from('processos').upsert(fromProcesso(p));
-    // sync movimentacoes: delete all then re-insert
-    await supabase.from('movimentacoes').delete().eq('processo_id', p.id);
+    const { error } = await supabase.from('processos').upsert(fromProcesso(p));
+    if (error) return { error };
+    // Upsert (por id) das movimentações conhecidas — NÃO apaga as demais,
+    // para não destruir os andamentos capturados pelo robô do DataJud.
     if (p.movimentacoes.length > 0) {
-      await supabase.from('movimentacoes').insert(
-        p.movimentacoes.map(m => ({ ...m, processo_id: p.id }))
+      const { error: eMov } = await supabase.from('movimentacoes').upsert(
+        p.movimentacoes.map(m => ({ ...m, processo_id: p.id })),
+        { onConflict: 'id' }
       );
+      if (eMov) return { error: eMov };
     }
+    return { error: null };
   },
   deleteProcesso: (id: string) => supabase.from('processos').delete().eq('id', id),
 
@@ -304,12 +308,16 @@ export const db = {
   upsertFeriado: (f: Feriado) => supabase.from('feriados_municipais').upsert(f),
   deleteFeriado: (id: string) => supabase.from('feriados_municipais').delete().eq('id', id),
 
-  // escritorio (upsert singleton)
-  upsertEscritorio: (e: ConfigEscritorio, apiKey: string) =>
-    supabase.from('escritorio').upsert({
+  // escritorio (singleton: atualiza a linha existente ou cria a primeira)
+  upsertEscritorio: async (e: ConfigEscritorio, apiKey: string) => {
+    const payload = {
       nome: e.nome, oab: e.oab, endereco: e.endereco,
       telefone: e.telefone, email: e.email, anthropic_api_key: apiKey,
-    }),
+    };
+    const { data } = await supabase.from('escritorio').select('id').limit(1);
+    if (data?.[0]?.id) return supabase.from('escritorio').update(payload).eq('id', data[0].id as string);
+    return supabase.from('escritorio').insert(payload);
+  },
 
   // credenciais
   upsertCredencial: (c: CredencialTribunal) =>

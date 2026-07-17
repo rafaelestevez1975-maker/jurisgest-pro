@@ -10,6 +10,7 @@ import Peticoes from './components/Peticoes';
 import Relatorios from './components/Relatorios';
 import Monitoramento from './components/Monitoramento';
 import Configuracoes from './components/Configuracoes';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Menu, X, ChevronRight, Bot } from 'lucide-react';
 
@@ -126,9 +127,13 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-      <Toaster position="top-right" richColors />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <ErrorBoundary>
+          <AppContent />
+        </ErrorBoundary>
+        <Toaster position="top-right" richColors />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

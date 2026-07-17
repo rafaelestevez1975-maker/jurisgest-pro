@@ -2,6 +2,22 @@ import React, { createContext, useContext, useReducer, useEffect, useState } fro
 import type { AppState, Cliente, Processo, Prazo, Publicacao, Peticao, Advogado, Feriado, ConfigEscritorio, CredencialTribunal } from './types';
 import { INITIAL_STATE } from './data';
 import { loadState, db } from './lib/db';
+import { toast } from 'sonner';
+
+// Avisa o usuário se uma gravação no Supabase falhar (evita perda silenciosa).
+function reportErro(p: unknown, label: string) {
+  Promise.resolve(p as Promise<{ error?: unknown }>)
+    .then(res => {
+      if (res && (res as { error?: unknown }).error) {
+        console.error('[sync]', label, (res as { error?: unknown }).error);
+        toast.error(`Não foi possível salvar (${label}). A alteração ficou no dispositivo; verifique a conexão.`);
+      }
+    })
+    .catch(err => {
+      console.error('[sync]', label, err);
+      toast.error(`Falha de conexão ao salvar (${label}).`);
+    });
+}
 
 type Action =
   | { type: 'SET_STATE'; payload: AppState }
@@ -74,62 +90,62 @@ function syncToSupabase(action: Action, nextState: AppState) {
   switch (action.type) {
     case 'ADD_CLIENTE':
     case 'UPDATE_CLIENTE':
-      db.upsertCliente(action.payload); break;
+      reportErro(db.upsertCliente(action.payload), 'cliente'); break;
     case 'DELETE_CLIENTE':
-      db.deleteCliente(action.payload); break;
+      reportErro(db.deleteCliente(action.payload), 'exclusão de cliente'); break;
 
     case 'ADD_PROCESSO':
     case 'UPDATE_PROCESSO':
-      db.upsertProcesso(action.payload); break;
+      reportErro(db.upsertProcesso(action.payload), 'processo'); break;
     case 'DELETE_PROCESSO':
-      db.deleteProcesso(action.payload); break;
+      reportErro(db.deleteProcesso(action.payload), 'exclusão de processo'); break;
 
     case 'ADD_PRAZO':
     case 'UPDATE_PRAZO':
-      db.upsertPrazo(action.payload); break;
+      reportErro(db.upsertPrazo(action.payload), 'prazo'); break;
     case 'DELETE_PRAZO':
-      db.deletePrazo(action.payload); break;
+      reportErro(db.deletePrazo(action.payload), 'exclusão de prazo'); break;
 
     case 'ADD_PUBLICACAO':
     case 'UPDATE_PUBLICACAO':
-      db.upsertPublicacao(action.payload); break;
+      reportErro(db.upsertPublicacao(action.payload), 'publicação'); break;
     case 'DELETE_PUBLICACAO':
-      db.deletePublicacao(action.payload); break;
+      reportErro(db.deletePublicacao(action.payload), 'exclusão de publicação'); break;
 
     case 'ADD_PETICAO':
     case 'UPDATE_PETICAO':
-      db.upsertPeticao(action.payload); break;
+      reportErro(db.upsertPeticao(action.payload), 'petição'); break;
     case 'DELETE_PETICAO':
-      db.deletePeticao(action.payload); break;
+      reportErro(db.deletePeticao(action.payload), 'exclusão de petição'); break;
 
     case 'ADD_ADVOGADO':
     case 'UPDATE_ADVOGADO':
-      db.upsertAdvogado(action.payload); break;
+      reportErro(db.upsertAdvogado(action.payload), 'advogado'); break;
     case 'DELETE_ADVOGADO':
-      db.deleteAdvogado(action.payload); break;
+      reportErro(db.deleteAdvogado(action.payload), 'exclusão de advogado'); break;
 
     case 'ADD_FERIADO':
-      db.upsertFeriado(action.payload); break;
+      reportErro(db.upsertFeriado(action.payload), 'feriado'); break;
     case 'DELETE_FERIADO':
-      db.deleteFeriado(action.payload); break;
+      reportErro(db.deleteFeriado(action.payload), 'exclusão de feriado'); break;
 
     case 'UPDATE_ESCRITORIO':
-      db.upsertEscritorio(action.payload, nextState.anthropicApiKey); break;
+      reportErro(db.upsertEscritorio(action.payload, nextState.anthropicApiKey), 'dados do escritório'); break;
     case 'SET_ANTHROPIC_KEY':
-      db.upsertEscritorio(nextState.escritorio, action.payload); break;
+      reportErro(db.upsertEscritorio(nextState.escritorio, action.payload), 'chave de IA'); break;
 
     case 'ADD_CREDENCIAL':
     case 'UPDATE_CREDENCIAL':
-      db.upsertCredencial(action.payload); break;
+      reportErro(db.upsertCredencial(action.payload), 'credencial de tribunal'); break;
 
     case 'IMPORT_CLIENTES':
-      action.payload.forEach(c => db.upsertCliente(c)); break;
+      action.payload.forEach(c => reportErro(db.upsertCliente(c), 'importação de cliente')); break;
     case 'IMPORT_PROCESSOS':
-      action.payload.forEach(p => db.upsertProcesso(p)); break;
+      action.payload.forEach(p => reportErro(db.upsertProcesso(p), 'importação de processo')); break;
     case 'IMPORT_PETICOES':
-      action.payload.forEach(p => db.upsertPeticao(p)); break;
+      action.payload.forEach(p => reportErro(db.upsertPeticao(p), 'importação de petição')); break;
     case 'IMPORT_PUBLICACOES':
-      action.payload.forEach(p => db.upsertPublicacao(p)); break;
+      action.payload.forEach(p => reportErro(db.upsertPublicacao(p), 'importação de publicação')); break;
   }
 }
 
@@ -146,33 +162,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, baseDispatch] = useReducer(reducer, INITIAL_STATE);
   const [loading, setLoading] = useState(true);
 
-  // Load from Supabase on mount, fall back to localStorage
+  // Load from Supabase on mount, fall back to localStorage (offline)
   useEffect(() => {
     loadState()
       .then(remote => {
-        // If DB is empty (no clientes), seed with INITIAL_STATE sample data
-        if (remote.clientes.length === 0 && remote.processos.length === 0) {
-          const seed = INITIAL_STATE;
-          baseDispatch({ type: 'SET_STATE', payload: seed });
-          // Persist seed data to Supabase
-          seed.clientes.forEach(c => db.upsertCliente(c));
-          seed.processos.forEach(p => db.upsertProcesso(p));
-          seed.prazos.forEach(p => db.upsertPrazo(p));
-          seed.publicacoes.forEach(p => db.upsertPublicacao(p));
-          seed.peticoes.forEach(p => db.upsertPeticao(p));
-          seed.advogados.forEach(a => db.upsertAdvogado(a));
-          seed.feriadosMunicipais.forEach(f => db.upsertFeriado(f));
-          db.upsertEscritorio(seed.escritorio, seed.anthropicApiKey);
-        } else {
-          baseDispatch({ type: 'SET_STATE', payload: remote });
-        }
+        // O Supabase é a fonte da verdade. Bancos vazios iniciam vazios
+        // (sem seed de dados fictícios com IDs não-UUID, que quebravam a gravação).
+        baseDispatch({ type: 'SET_STATE', payload: remote });
       })
       .catch(() => {
-        // offline: try localStorage fallback
+        // Offline: usa o cache local se houver
         try {
           const saved = localStorage.getItem('jurisgest_data');
           if (saved) baseDispatch({ type: 'SET_STATE', payload: JSON.parse(saved) });
-        } catch { /* use INITIAL_STATE */ }
+        } catch { /* mantém INITIAL_STATE */ }
       })
       .finally(() => setLoading(false));
   }, []);
