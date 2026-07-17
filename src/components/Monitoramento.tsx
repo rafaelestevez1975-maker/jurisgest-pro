@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Bot, Play, Loader2, CheckCircle2, AlertTriangle, Clock, Search, Key,
-  Eye, EyeOff, RefreshCw, Scale, Globe, Info,
+  Eye, EyeOff, Scale, Globe, Info, Gavel, Users as UsersIcon, Plus, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -29,6 +29,7 @@ interface Sincronizacao {
 }
 interface ParteMonitorada {
   id: string; nome: string; tipo: string; documento: string;
+  categoria: string; oab: string;
   cliente_id: string | null; ativo: boolean;
   ultima_busca: string | null; processos_encontrados: number;
 }
@@ -56,6 +57,11 @@ export default function Monitoramento() {
   const [tokenLocal, setTokenLocal] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [salvandoToken, setSalvandoToken] = useState(false);
+  // formulários de cadastro
+  const [procNome, setProcNome] = useState('');
+  const [procOab, setProcOab] = useState('');
+  const [cliNome, setCliNome] = useState('');
+  const [cliDoc, setCliDoc] = useState('');
 
   const carregar = async () => {
     const [{ data: cfg }, { data: hist }, { data: pts }] = await Promise.all([
@@ -118,6 +124,35 @@ export default function Monitoramento() {
       toast.error('Falha na busca: ' + ((e as Error)?.message || e));
     }
     setBuscandoId(null);
+  };
+
+  const procuradores = partes.filter(p => p.categoria === 'procurador');
+  const clientesMonit = partes.filter(p => p.categoria !== 'procurador');
+
+  const addProcurador = async () => {
+    const nome = procNome.trim();
+    if (!nome && !procOab.trim()) { toast.error('Informe o nome ou a OAB do procurador.'); return; }
+    const { error } = await supabase.from('partes_monitoradas').insert({
+      nome: nome || `OAB ${procOab.trim()}`, categoria: 'procurador', tipo: 'PF', oab: procOab.trim(),
+    });
+    if (error) { toast.error('Erro ao cadastrar: ' + error.message); return; }
+    setProcNome(''); setProcOab(''); toast.success('Procurador cadastrado.'); carregar();
+  };
+
+  const addCliente = async () => {
+    const nome = cliNome.trim();
+    if (!nome) { toast.error('Informe o nome do cliente.'); return; }
+    const ehPJ = /\b(ltda|s\/a|s\.?a\.?|eireli|me|epp|associa|empresa|cia|company)\b/i.test(nome);
+    const { error } = await supabase.from('partes_monitoradas').insert({
+      nome, categoria: 'parte', tipo: ehPJ ? 'PJ' : 'PF', documento: cliDoc.trim(),
+    });
+    if (error) { toast.error('Erro ao cadastrar: ' + error.message); return; }
+    setCliNome(''); setCliDoc(''); toast.success('Cliente cadastrado para monitoramento.'); carregar();
+  };
+
+  const remover = async (id: string) => {
+    await supabase.from('partes_monitoradas').delete().eq('id', id);
+    carregar();
   };
 
   const temToken = !!(config?.escavador_token || '').trim();
@@ -222,7 +257,7 @@ export default function Monitoramento() {
         <CardContent className="space-y-4">
           <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2.5">
             <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
-            <p><b>Importante:</b> o DataJud gratuito do CNJ <b>não</b> indexa os nomes das partes — só permite busca por número de processo. Para localizar processos por nome/CPF/CNPJ em todo o Brasil é necessário um provedor pago que indexa as partes (ex.: <b>Escavador</b>, que oferece crédito grátis de teste). Cole o token abaixo para ativar. Os processos encontrados são cadastrados automaticamente e passam a ser monitorados pelo robô do DataJud.</p>
+            <p><b>Importante:</b> o DataJud gratuito do CNJ <b>não</b> indexa nomes (nem de partes nem de advogados) — só busca por número. Para localizar processos e publicações por <b>nome do procurador/OAB</b> ou por <b>nome do cliente</b> em todo o Brasil é preciso um provedor pago que indexa esses dados (ex.: <b>Escavador</b>, com crédito grátis de teste). Cole o token abaixo para ativar. Os processos encontrados são cadastrados automaticamente e passam a ser monitorados pelo robô do DataJud.</p>
           </div>
 
           {/* Token */}
@@ -252,40 +287,65 @@ export default function Monitoramento() {
             </div>
           </div>
 
-          {/* Partes monitoradas */}
+          {/* ── Procuradores (meu nome / OAB) ── */}
           <div>
-            <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1"><Search size={12} /> Partes monitoradas</p>
-            {partes.length === 0 ? (
-              <p className="text-xs text-gray-400 py-3 text-center">Nenhuma parte cadastrada.</p>
-            ) : (
-              <div className="border rounded divide-y">
-                {partes.map(p => {
-                  const cliente = state.clientes.find(c => c.id === p.cliente_id);
-                  return (
-                    <div key={p.id} className="flex items-center justify-between gap-3 p-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-800 flex items-center gap-2">
-                          {p.nome}
-                          <Badge variant="outline" className="text-[10px] px-1.5">{p.tipo}</Badge>
-                        </div>
-                        <p className="text-xs text-gray-500">
-                          {cliente ? `Cliente: ${cliente.nome}` : 'Sem cliente vinculado'}
-                          {' · '}Última busca: {fmtData(p.ultima_busca)}
-                          {p.processos_encontrados > 0 && ` · ${p.processos_encontrados} encontrado(s)`}
-                        </p>
-                      </div>
-                      <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50 flex-shrink-0"
-                        onClick={() => buscarParte(p)} disabled={buscandoId === p.id || !temToken}>
-                        {buscandoId === p.id ? <Loader2 size={13} className="animate-spin mr-1" /> : <Search size={13} className="mr-1" />}
-                        Buscar processos
-                      </Button>
-                    </div>
-                  );
-                })}
+            <p className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1"><Gavel size={13} className="text-[#1e3a5f]" /> Procuradores — monitorar por MEU nome / OAB</p>
+            <p className="text-[11px] text-gray-400 mb-2">Localiza os processos e publicações em que você atua como advogado, em todos os tribunais.</p>
+            <div className="border rounded divide-y">
+              {procuradores.map(p => (
+                <div key={p.id} className="flex items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-800">{p.nome}{p.oab && <span className="text-xs text-gray-400 ml-1">OAB {p.oab}</span>}</div>
+                    <p className="text-xs text-gray-500">Última busca: {fmtData(p.ultima_busca)}{p.processos_encontrados > 0 && ` · ${p.processos_encontrados} encontrado(s)`}</p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                      onClick={() => buscarParte(p)} disabled={buscandoId === p.id || !temToken}>
+                      {buscandoId === p.id ? <Loader2 size={13} className="animate-spin mr-1" /> : <Search size={13} className="mr-1" />}
+                      Buscar
+                    </Button>
+                    <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 p-2 bg-gray-50">
+                <Input className="h-8 text-xs flex-1" placeholder="Nome do advogado" value={procNome} onChange={e => setProcNome(e.target.value)} />
+                <Input className="h-8 text-xs w-32" placeholder="OAB (ex: 12345/RS)" value={procOab} onChange={e => setProcOab(e.target.value)} />
+                <Button size="sm" className="h-8 text-xs bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={addProcurador}><Plus size={13} className="mr-1" /> Adicionar</Button>
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* ── Clientes monitorados por nome ── */}
+          <div>
+            <p className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1"><UsersIcon size={13} className="text-[#1e3a5f]" /> Clientes monitorados por nome</p>
+            <p className="text-[11px] text-gray-400 mb-2">Descobre processos pelo nome do cliente. Processos que já estão sob o seu nome de procurador são ignorados (sem repetição).</p>
+            <div className="border rounded divide-y">
+              {clientesMonit.map(p => (
+                <div key={p.id} className="flex items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-800 flex items-center gap-2">{p.nome}<Badge variant="outline" className="text-[10px] px-1.5">{p.tipo}</Badge></div>
+                    <p className="text-xs text-gray-500">Última busca: {fmtData(p.ultima_busca)}{p.processos_encontrados > 0 && ` · ${p.processos_encontrados} encontrado(s)`}</p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                      onClick={() => buscarParte(p)} disabled={buscandoId === p.id || !temToken}>
+                      {buscandoId === p.id ? <Loader2 size={13} className="animate-spin mr-1" /> : <Search size={13} className="mr-1" />}
+                      Buscar
+                    </Button>
+                    <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+              ))}
+              {clientesMonit.length === 0 && <p className="text-xs text-gray-400 py-3 text-center">Nenhum cliente cadastrado.</p>}
+              <div className="flex items-center gap-2 p-2 bg-gray-50">
+                <Input className="h-8 text-xs flex-1" placeholder="Nome do cliente (parte)" value={cliNome} onChange={e => setCliNome(e.target.value)} />
+                <Input className="h-8 text-xs w-36" placeholder="CPF/CNPJ (opcional)" value={cliDoc} onChange={e => setCliDoc(e.target.value)} />
+                <Button size="sm" className="h-8 text-xs bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={addCliente}><Plus size={13} className="mr-1" /> Adicionar</Button>
+              </div>
+            </div>
             <p className="text-[11px] text-gray-400 mt-2 flex items-center gap-1">
-              <Scale size={11} /> Processos encontrados são cadastrados e vinculados ao cliente automaticamente.
+              <Scale size={11} /> Processos encontrados são cadastrados automaticamente e passam a ser monitorados pelo robô do DataJud (andamentos + publicações).
             </p>
           </div>
         </CardContent>
