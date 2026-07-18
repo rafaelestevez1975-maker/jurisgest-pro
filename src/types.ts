@@ -26,6 +26,7 @@ export interface Cliente {
   cidade?: string;
   uf?: string;
   observacoes?: string;
+  arquivado?: boolean;
   criadoEm: string;
 }
 
@@ -52,6 +53,7 @@ export interface Processo {
   status: StatusProcesso;
   polo: PoloProcesso;
   objeto: string;
+  arquivado?: boolean;
   movimentacoes: Movimentacao[];
   observacoes?: string;
   criadoEm: string;
@@ -80,6 +82,8 @@ export interface Publicacao {
   processoId?: string;
   conteudo: string;
   status: StatusPublicacao;
+  tipo?: string;
+  link?: string;
   criadoEm: string;
 }
 

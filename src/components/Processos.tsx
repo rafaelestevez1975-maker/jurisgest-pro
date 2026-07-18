@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Search, Edit, Trash2, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus } from 'lucide-react';
 import { toast } from 'sonner';
 
 const AREAS: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','outro'];
@@ -1382,12 +1382,16 @@ export default function Processos() {
   const [importarLoteOpen, setImportarLoteOpen] = useState(false);
   const [editProcesso, setEditProcesso] = useState<Processo | null>(null);
   const [viewProcesso, setViewProcesso] = useState<Processo | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [arquivarId, setArquivarId] = useState<string | null>(null);
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
   // prefill from DataJud — stored here, passed to form via key remount
   const [prefill, setPrefill] = useState<(Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'> & { movimentacoes?: Movimentacao[] }) | null>(null);
   const [formKey, setFormKey] = useState(0);
 
+  const arquivadosCount = state.processos.filter(p => p.arquivado).length;
+
   const filtered = state.processos.filter(p => {
+    if (mostrarArquivados ? !p.arquivado : !!p.arquivado) return false;
     const cliente = state.clientes.find(c => c.id === p.clienteId);
     const matchSearch = p.numero.includes(search) ||
       cliente?.nome.toLowerCase().includes(search.toLowerCase()) ||
@@ -1397,6 +1401,17 @@ export default function Processos() {
     const matchTribunal = filterTribunal === 'todos' || p.tribunal === filterTribunal;
     return matchSearch && matchStatus && matchArea && matchTribunal;
   });
+
+  const arquivarProcesso = (id: string) => {
+    const p = state.processos.find(x => x.id === id);
+    if (p) dispatch({ type: 'UPDATE_PROCESSO', payload: { ...p, arquivado: true } });
+    toast.success('Processo arquivado.');
+    setArquivarId(null);
+  };
+  const restaurarProcesso = (p: Processo) => {
+    dispatch({ type: 'UPDATE_PROCESSO', payload: { ...p, arquivado: false } });
+    toast.success('Processo restaurado.');
+  };
 
   const handleSave = (data: Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>, movs?: Movimentacao[]) => {
     if (editProcesso) {
@@ -1437,7 +1452,9 @@ export default function Processos() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#1e3a5f]">Processos</h1>
-          <p className="text-sm text-gray-500">{state.processos.length} processos cadastrados</p>
+          <p className="text-sm text-gray-500">
+            {state.processos.length - arquivadosCount} ativo(s){arquivadosCount > 0 && ` · ${arquivadosCount} arquivado(s)`}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarLoteOpen(true)}>
@@ -1478,6 +1495,9 @@ export default function Processos() {
             {tribunaisUnicos.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Button variant={mostrarArquivados ? 'default' : 'outline'} size="sm" className={`h-9 text-xs ${mostrarArquivados ? 'bg-slate-500 hover:bg-slate-600' : ''}`} onClick={() => setMostrarArquivados(v => !v)}>
+          <Archive size={14} className="mr-1" /> {mostrarArquivados ? 'Ver ativos' : `Arquivados${arquivadosCount ? ` (${arquivadosCount})` : ''}`}
+        </Button>
       </div>
 
       <div className="space-y-2">
@@ -1507,7 +1527,9 @@ export default function Processos() {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <Badge className={`${statusColor[proc.status]} capitalize text-[10px]`}>{proc.status}</Badge>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={e => { e.stopPropagation(); setEditProcesso(proc); setPrefill(null); setDialogOpen(true); }}><Edit size={13} /></Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={e => { e.stopPropagation(); setDeleteId(proc.id); }}><Trash2 size={13} /></Button>
+                    {proc.arquivado
+                      ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={e => { e.stopPropagation(); restaurarProcesso(proc); }}><ArchiveRestore size={13} /></Button>
+                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={e => { e.stopPropagation(); setArquivarId(proc.id); }}><Archive size={13} /></Button>}
                     <ChevronRight size={14} className="text-gray-400" />
                   </div>
                 </div>
@@ -1589,14 +1611,14 @@ export default function Processos() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Deletar */}
-      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+      {/* Dialog Arquivar */}
+      <Dialog open={!!arquivarId} onOpenChange={() => setArquivarId(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Confirmar exclusão</DialogTitle></DialogHeader>
-          <p className="text-sm text-gray-600">Tem certeza que deseja excluir este processo?</p>
+          <DialogHeader><DialogTitle>Arquivar processo</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-600">O processo sai da lista ativa, mas <b>não é excluído</b> — os andamentos, prazos e publicações são mantidos, e você pode restaurá-lo em "Arquivados".</p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteId(null)}>Cancelar</Button>
-            <Button variant="destructive" size="sm" onClick={() => { if (deleteId) { dispatch({ type: 'DELETE_PROCESSO', payload: deleteId }); toast.success('Processo excluído.'); setDeleteId(null); } }}>Excluir</Button>
+            <Button variant="outline" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
+            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarProcesso(arquivarId)}>Arquivar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

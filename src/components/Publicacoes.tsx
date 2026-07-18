@@ -101,6 +101,7 @@ export default function Publicacoes() {
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [importOpen, setImportOpen] = useState(false);
+  const [viewPub, setViewPub] = useState<Publicacao | null>(null);
   const [gerarPrazoId, setGerarPrazoId] = useState<string | null>(null);
   const [prazoDescricao, setPrazoDescricao] = useState('');
   const [prazoData, setPrazoData] = useState('');
@@ -130,6 +131,11 @@ export default function Publicacoes() {
     if (pub && pub.status === 'não_lida') {
       dispatch({ type: 'UPDATE_PUBLICACAO', payload: { ...pub, status: 'lida' } });
     }
+  };
+
+  const abrirPublicacao = (pub: Publicacao) => {
+    marcarLida(pub.id);
+    setViewPub({ ...pub, status: pub.status === 'não_lida' ? 'lida' : pub.status });
   };
 
   const arquivar = (pub: Publicacao) => {
@@ -313,8 +319,8 @@ export default function Publicacoes() {
               return (
                 <Card
                   key={pub.id}
-                  className={`hover:shadow-md transition-shadow ${pub.status === 'não_lida' ? 'border-red-200' : ''} ${isArquivada ? 'opacity-60' : ''}`}
-                  onClick={() => marcarLida(pub.id)}
+                  className={`hover:shadow-md transition-shadow cursor-pointer ${pub.status === 'não_lida' ? 'border-red-200' : ''} ${isArquivada ? 'opacity-60' : ''}`}
+                  onClick={() => abrirPublicacao(pub)}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-3">
@@ -400,6 +406,64 @@ export default function Publicacoes() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Detalhe da Publicação */}
+      <Dialog open={!!viewPub} onOpenChange={() => setViewPub(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-[#1e3a5f] flex items-center gap-2 flex-wrap text-base">
+              <span className="text-[#2563eb]">{viewPub?.tribunal}</span>
+              {viewPub?.tipo && <Badge variant="outline" className="text-[10px]">{viewPub.tipo}</Badge>}
+              <span className="text-xs text-gray-400 font-normal">{viewPub?.data}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {viewPub && (() => {
+            const proc = state.processos.find(p => p.id === viewPub.processoId);
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="font-mono text-gray-600">{viewPub.numeroProcesso || 'Sem número'}</span>
+                  <Badge className={`${statusColor[viewPub.status]} text-[10px] px-1.5`}>{statusLabel[viewPub.status]}</Badge>
+                  {proc && <span className="text-blue-600">↳ vinculado</span>}
+                </div>
+
+                <div className="bg-gray-50 border rounded p-3 text-xs text-gray-700 whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto">
+                  {viewPub.conteudo || 'Sem conteúdo.'}
+                </div>
+
+                {viewPub.link && (
+                  <a href={viewPub.link} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1 w-fit">
+                    <ExternalLink size={12} /> Abrir no site do tribunal
+                  </a>
+                )}
+
+                {!viewPub.processoId && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Vincular a processo:</span>
+                    <Select onValueChange={v => { vincularProcesso(viewPub, v); setViewPub({ ...viewPub, processoId: v }); }}>
+                      <SelectTrigger className="h-7 text-xs w-56"><SelectValue placeholder="Selecione o processo..." /></SelectTrigger>
+                      <SelectContent>
+                        {state.processos.map(p => <SelectItem key={p.id} value={p.id} className="text-xs"><span className="font-mono">{p.numero}</span></SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <DialogFooter className="gap-2 sm:gap-2">
+                  {viewPub.status === 'arquivada'
+                    ? <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { desarquivar(viewPub); setViewPub(null); }}><ArchiveRestore size={14} className="mr-1" /> Restaurar</Button>
+                    : <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { arquivar(viewPub); setViewPub(null); }}><Archive size={14} className="mr-1" /> Arquivar</Button>}
+                  {viewPub.status !== 'prazo_gerado' && viewPub.status !== 'arquivada' && (
+                    <Button size="sm" className="bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={() => { setGerarPrazoId(viewPub.id); setViewPub(null); }}>
+                      <Clock size={14} className="mr-1" /> Gerar Prazo
+                    </Button>
+                  )}
+                </DialogFooter>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Gerar Prazo Dialog */}
       <Dialog open={!!gerarPrazoId} onOpenChange={() => setGerarPrazoId(null)}>

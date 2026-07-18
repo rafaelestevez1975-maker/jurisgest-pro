@@ -25,6 +25,7 @@ function toCliente(r: Record<string, unknown>): Cliente {
     cidade: r.cidade as string | undefined,
     uf: r.uf as string | undefined,
     observacoes: r.observacoes as string | undefined,
+    arquivado: (r.arquivado as boolean) ?? false,
     criadoEm: r.criado_em as string,
   };
 }
@@ -47,6 +48,7 @@ function fromCliente(c: Cliente) {
     cidade: c.cidade,
     uf: c.uf,
     observacoes: c.observacoes,
+    arquivado: c.arquivado ?? false,
     criado_em: c.criadoEm,
   };
 }
@@ -77,6 +79,7 @@ function toProcesso(r: Record<string, unknown>, movs: Movimentacao[] = []): Proc
     status: r.status as Processo['status'],
     polo: (r.polo as Processo['polo']) ?? 'outro',
     objeto: (r.objeto as string) ?? '',
+    arquivado: (r.arquivado as boolean) ?? false,
     movimentacoes: movs,
     observacoes: r.observacoes as string | undefined,
     criadoEm: r.criado_em as string,
@@ -100,6 +103,7 @@ function fromProcesso(p: Processo) {
     status: p.status,
     polo: p.polo ?? 'outro',
     objeto: p.objeto ?? '',
+    arquivado: p.arquivado ?? false,
     observacoes: p.observacoes ?? null,
     criado_em: p.criadoEm,
   };
@@ -148,6 +152,8 @@ function toPublicacao(r: Record<string, unknown>): Publicacao {
     processoId: r.processo_id as string | undefined,
     conteudo: r.conteudo as string,
     status: r.status as Publicacao['status'],
+    tipo: (r.tipo as string) ?? '',
+    link: (r.link as string) ?? '',
     criadoEm: r.criado_em as string,
   };
 }
@@ -161,6 +167,8 @@ function fromPublicacao(p: Publicacao) {
     processo_id: p.processoId ?? null,
     conteudo: p.conteudo,
     status: p.status,
+    tipo: p.tipo ?? '',
+    link: p.link ?? '',
     criado_em: p.criadoEm,
   };
 }

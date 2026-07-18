@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Search, Edit, Trash2, Upload, User, Building2, Phone, Mail, MapPin, FileText } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, User, Building2, Phone, Mail, MapPin, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 const emptyCliente = (): Omit<Cliente, 'id' | 'criadoEm'> => ({
@@ -209,15 +209,18 @@ export default function Clientes() {
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [arquivarId, setArquivarId] = useState<string | null>(null);
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [editCliente, setEditCliente] = useState<Cliente | null>(null);
   const [viewCliente, setViewCliente] = useState<Cliente | null>(null);
 
-  const filtered = state.clientes.filter(c =>
-    c.nome.toLowerCase().includes(search.toLowerCase()) ||
-    c.cpfCnpj.includes(search) ||
-    c.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = state.clientes.filter(c => {
+    if (mostrarArquivados ? !c.arquivado : !!c.arquivado) return false;
+    return c.nome.toLowerCase().includes(search.toLowerCase()) ||
+      c.cpfCnpj.includes(search) ||
+      c.email.toLowerCase().includes(search.toLowerCase());
+  });
+  const arquivadosCount = state.clientes.filter(c => c.arquivado).length;
 
   const handleSave = (data: Omit<Cliente, 'id' | 'criadoEm'>) => {
     if (editCliente) {
@@ -231,10 +234,16 @@ export default function Clientes() {
     setEditCliente(null);
   };
 
-  const handleDelete = (id: string) => {
-    dispatch({ type: 'DELETE_CLIENTE', payload: id });
-    toast.success('Cliente excluído.');
-    setDeleteId(null);
+  const handleArquivar = (id: string) => {
+    const c = state.clientes.find(x => x.id === id);
+    if (c) dispatch({ type: 'UPDATE_CLIENTE', payload: { ...c, arquivado: true } });
+    toast.success('Cliente arquivado.');
+    setArquivarId(null);
+  };
+
+  const handleRestaurar = (c: Cliente) => {
+    dispatch({ type: 'UPDATE_CLIENTE', payload: { ...c, arquivado: false } });
+    toast.success('Cliente restaurado.');
   };
 
   const handleImport = (rows: Omit<Cliente, 'id' | 'criadoEm'>[]) => {
@@ -250,7 +259,9 @@ export default function Clientes() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#1e3a5f]">Clientes</h1>
-          <p className="text-sm text-gray-500">{state.clientes.length} clientes cadastrados</p>
+          <p className="text-sm text-gray-500">
+            {state.clientes.length - arquivadosCount} ativo(s){arquivadosCount > 0 && ` · ${arquivadosCount} arquivado(s)`}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}>
@@ -262,9 +273,14 @@ export default function Clientes() {
         </div>
       </div>
 
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
-        <Input className="pl-8 h-9 text-sm" placeholder="Buscar por nome, CPF/CNPJ ou email..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="flex gap-2 items-center">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+          <Input className="pl-8 h-9 text-sm" placeholder="Buscar por nome, CPF/CNPJ ou email..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <Button variant={mostrarArquivados ? 'default' : 'outline'} size="sm" className={`h-9 text-xs ${mostrarArquivados ? 'bg-slate-500 hover:bg-slate-600' : ''}`} onClick={() => setMostrarArquivados(v => !v)}>
+          <Archive size={14} className="mr-1" /> {mostrarArquivados ? 'Ver ativos' : `Arquivados${arquivadosCount ? ` (${arquivadosCount})` : ''}`}
+        </Button>
       </div>
 
       <div className="grid gap-3">
@@ -293,7 +309,9 @@ export default function Clientes() {
                     <Badge variant="outline" className="text-[10px] px-1.5">{cliente.tipo}</Badge>
                     <Badge className="bg-blue-100 text-blue-700 text-[10px] px-1.5"><FileText size={9} className="mr-0.5" />{procs.length}</Badge>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={e => { e.stopPropagation(); setEditCliente(cliente); setDialogOpen(true); }}><Edit size={13} /></Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={e => { e.stopPropagation(); setDeleteId(cliente.id); }}><Trash2 size={13} /></Button>
+                    {cliente.arquivado
+                      ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={e => { e.stopPropagation(); handleRestaurar(cliente); }}><ArchiveRestore size={13} /></Button>
+                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={e => { e.stopPropagation(); setArquivarId(cliente.id); }}><Archive size={13} /></Button>}
                   </div>
                 </div>
               </CardContent>
@@ -369,14 +387,14 @@ export default function Clientes() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Confirmar exclusão */}
-      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+      {/* Dialog Confirmar arquivamento */}
+      <Dialog open={!!arquivarId} onOpenChange={() => setArquivarId(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Confirmar exclusão</DialogTitle></DialogHeader>
-          <p className="text-sm text-gray-600">Tem certeza que deseja excluir este cliente? Esta ação não pode ser desfeita.</p>
+          <DialogHeader><DialogTitle>Arquivar cliente</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-600">O cliente sai da lista ativa, mas <b>não é excluído</b> — você pode restaurá-lo a qualquer momento em "Arquivados". Os processos vinculados são mantidos.</p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteId(null)}>Cancelar</Button>
-            <Button variant="destructive" size="sm" onClick={() => deleteId && handleDelete(deleteId)}>Excluir</Button>
+            <Button variant="outline" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
+            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && handleArquivar(arquivarId)}>Arquivar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
