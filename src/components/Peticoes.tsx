@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Plus, Search, Edit, Trash2, Upload, FileText } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TIPOS: TipoPeticao[] = ['inicial','contestação','recurso','parecer','embargos','outro'];
@@ -146,16 +146,31 @@ export default function Peticoes() {
   const [filterTipo, setFilterTipo] = useState<string>('todos');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editPeticao, setEditPeticao] = useState<Peticao | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [arquivarId, setArquivarId] = useState<string | null>(null);
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
+  const arquivadosCount = state.peticoes.filter(p => p.arquivado).length;
+
   const filtered = state.peticoes.filter(p => {
+    if (mostrarArquivados ? !p.arquivado : !!p.arquivado) return false;
     const proc = state.processos.find(pr => pr.id === p.processoId);
     const matchSearch = !search || p.nome.toLowerCase().includes(search.toLowerCase()) || p.numeroProtocolo?.includes(search) || proc?.numero.includes(search);
     const matchStatus = filterStatus === 'todos' || p.status === filterStatus;
     const matchTipo = filterTipo === 'todos' || p.tipo === filterTipo;
     return matchSearch && matchStatus && matchTipo;
   }).sort((a, b) => (b.dataProtocolo || '').localeCompare(a.dataProtocolo || ''));
+
+  const arquivarPeticao = (id: string) => {
+    const p = state.peticoes.find(x => x.id === id);
+    if (p) dispatch({ type: 'UPDATE_PETICAO', payload: { ...p, arquivado: true } });
+    toast.success('Petição arquivada.');
+    setArquivarId(null);
+  };
+  const restaurarPeticao = (p: Peticao) => {
+    dispatch({ type: 'UPDATE_PETICAO', payload: { ...p, arquivado: false } });
+    toast.success('Petição restaurada.');
+  };
 
   const handleSave = (data: Omit<Peticao, 'id' | 'criadoEm'>) => {
     if (editPeticao) {
@@ -180,7 +195,9 @@ export default function Peticoes() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#1e3a5f]">Petições e Documentos</h1>
-          <p className="text-sm text-gray-500">{state.peticoes.length} documentos cadastrados</p>
+          <p className="text-sm text-gray-500">
+            {state.peticoes.length - arquivadosCount} ativa(s){arquivadosCount > 0 && ` · ${arquivadosCount} arquivada(s)`}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}><Upload size={14} className="mr-1" />Importar CSV</Button>
@@ -201,6 +218,9 @@ export default function Peticoes() {
           <SelectTrigger className="h-9 text-xs w-32"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="todos">Todos tipos</SelectItem>{TIPOS.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
         </Select>
+        <Button variant={mostrarArquivados ? 'default' : 'outline'} size="sm" className={`h-9 text-xs ${mostrarArquivados ? 'bg-slate-500 hover:bg-slate-600' : ''}`} onClick={() => setMostrarArquivados(v => !v)}>
+          <Archive size={14} className="mr-1" /> {mostrarArquivados ? 'Ver ativas' : `Arquivadas${arquivadosCount ? ` (${arquivadosCount})` : ''}`}
+        </Button>
       </div>
 
       <div className="space-y-2">
@@ -230,7 +250,9 @@ export default function Peticoes() {
                     <Badge variant="outline" className="capitalize text-[10px]">{pet.tipo}</Badge>
                     <Badge className={`${statusColor[pet.status]} capitalize text-[10px]`}>{pet.status}</Badge>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditPeticao(pet); setDialogOpen(true); }}><Edit size={12} /></Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => setDeleteId(pet.id)}><Trash2 size={12} /></Button>
+                    {pet.arquivado
+                      ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => restaurarPeticao(pet)}><ArchiveRestore size={13} /></Button>
+                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(pet.id)}><Archive size={13} /></Button>}
                   </div>
                 </div>
                 {pet.observacoes && <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded px-2 py-1">{pet.observacoes}</p>}
@@ -253,10 +275,10 @@ export default function Peticoes() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Confirmar exclusão</DialogTitle></DialogHeader>
-          <p className="text-sm text-gray-600">Excluir esta petição?</p>
-          <DialogFooter><Button variant="outline" size="sm" onClick={() => setDeleteId(null)}>Cancelar</Button><Button variant="destructive" size="sm" onClick={() => { if (deleteId) { dispatch({ type: 'DELETE_PETICAO', payload: deleteId }); toast.success('Petição excluída.'); setDeleteId(null); } }}>Excluir</Button></DialogFooter>
+      <Dialog open={!!arquivarId} onOpenChange={() => setArquivarId(null)}>
+        <DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Arquivar petição</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-600">A petição sai da lista ativa, mas <b>não é excluída</b> — você pode restaurá-la em "Arquivadas".</p>
+          <DialogFooter><Button variant="outline" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button><Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarPeticao(arquivarId)}>Arquivar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

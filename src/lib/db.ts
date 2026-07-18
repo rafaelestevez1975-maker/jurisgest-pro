@@ -183,6 +183,7 @@ function toPeticao(r: Record<string, unknown>): Peticao {
     numeroProtocolo: r.numero_protocolo as string | undefined,
     status: r.status as Peticao['status'],
     observacoes: r.observacoes as string | undefined,
+    arquivado: (r.arquivado as boolean) ?? false,
     criadoEm: r.criado_em as string,
   };
 }
@@ -197,6 +198,7 @@ function fromPeticao(p: Peticao) {
     numero_protocolo: p.numeroProtocolo ?? null,
     status: p.status,
     observacoes: p.observacoes ?? null,
+    arquivado: p.arquivado ?? false,
     criado_em: p.criadoEm,
   };
 }

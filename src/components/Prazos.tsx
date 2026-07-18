@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Edit, Trash2, CheckCircle, XCircle, CalendarDays, List, AlertTriangle, Clock, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit, CheckCircle, XCircle, CalendarDays, List, AlertTriangle, Clock, Eye, EyeOff } from 'lucide-react';
 import { diasRestantes } from '../data';
 import { toast } from 'sonner';
 
@@ -345,7 +345,9 @@ export default function Prazos() {
                         </Button>
                       )}
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditPrazo(prazo); setDialogOpen(true); }}><Edit size={12} /></Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => setDeleteId(prazo.id)}><Trash2 size={12} /></Button>
+                      {prazo.status !== 'cancelado' && (
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400 hover:text-red-500" title="Cancelar prazo" onClick={() => setDeleteId(prazo.id)}><XCircle size={13} /></Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -450,14 +452,14 @@ export default function Prazos() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog deletar */}
+      {/* Dialog cancelar prazo */}
       <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Confirmar exclusão</DialogTitle></DialogHeader>
-          <p className="text-sm text-gray-600">Excluir este prazo?</p>
+          <DialogHeader><DialogTitle>Cancelar prazo</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-600">O prazo passa para a situação <b>cancelado</b> — ele <b>não é excluído</b> e continua no histórico (filtre por "cancelado" para vê-lo).</p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteId(null)}>Cancelar</Button>
-            <Button variant="destructive" size="sm" onClick={() => { if (deleteId) { dispatch({ type: 'DELETE_PRAZO', payload: deleteId }); toast.success('Prazo excluído.'); setDeleteId(null); } }}>Excluir</Button>
+            <Button variant="outline" size="sm" onClick={() => setDeleteId(null)}>Voltar</Button>
+            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => { if (deleteId) { const p = state.prazos.find(x => x.id === deleteId); if (p) dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'cancelado' } }); toast.success('Prazo cancelado.'); setDeleteId(null); } }}>Cancelar prazo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
