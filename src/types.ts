@@ -96,6 +96,9 @@ export interface Peticao {
   numeroProtocolo?: string;
   status: StatusPeticao;
   observacoes?: string;
+  conteudo?: string;
+  arquivoPath?: string;
+  arquivoNome?: string;
   arquivado?: boolean;
   criadoEm: string;
 }

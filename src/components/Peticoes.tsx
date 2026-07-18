@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp, genId } from '../context';
+import { supabase } from '../lib/supabase';
 import type { Peticao, TipoPeticao, StatusPeticao } from '../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, FileText } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, FileText, Paperclip, Download, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 const TIPOS: TipoPeticao[] = ['inicial','contestação','recurso','parecer','embargos','outro'];
@@ -22,7 +23,8 @@ const statusColor: Record<StatusPeticao, string> = {
 };
 
 const emptyPeticao = (): Omit<Peticao, 'id' | 'criadoEm'> => ({
-  nome: '', processoId: '', tipo: 'inicial', dataProtocolo: '', numeroProtocolo: '', status: 'rascunho', observacoes: '',
+  nome: '', processoId: '', tipo: 'inicial', dataProtocolo: '', numeroProtocolo: '', status: 'rascunho',
+  observacoes: '', conteudo: '', arquivoPath: '', arquivoNome: '',
 });
 
 function PeticaoForm({ initial, onSave, onCancel }: {
@@ -32,7 +34,23 @@ function PeticaoForm({ initial, onSave, onCancel }: {
 }) {
   const { state } = useApp();
   const [form, setForm] = useState(initial);
+  const [file, setFile] = useState<File | null>(null);
+  const [salvando, setSalvando] = useState(false);
   const set = (k: keyof typeof form, v: unknown) => setForm(f => ({ ...f, [k]: v }));
+
+  const salvar = async () => {
+    if (!form.nome || !form.processoId) { toast.error('Preencha nome e processo.'); return; }
+    setSalvando(true);
+    let dados = { ...form };
+    if (file) {
+      const path = `${genId()}-${file.name.replace(/[^\w.\-]/g, '_')}`;
+      const { error } = await supabase.storage.from('peticoes').upload(path, file, { upsert: false });
+      if (error) { toast.error('Falha ao enviar o arquivo: ' + error.message); setSalvando(false); return; }
+      dados = { ...dados, arquivoPath: path, arquivoNome: file.name };
+    }
+    setSalvando(false);
+    onSave(dados);
+  };
 
   return (
     <div className="space-y-3">
@@ -76,16 +94,37 @@ function PeticaoForm({ initial, onSave, onCancel }: {
           <Input className="mt-1 h-8 text-sm" value={form.numeroProtocolo || ''} onChange={e => set('numeroProtocolo', e.target.value)} />
         </div>
         <div className="col-span-2">
+          <Label className="text-xs">Texto da petição (opcional — cole aqui)</Label>
+          <Textarea className="mt-1 text-sm font-mono" rows={4} value={form.conteudo || ''} onChange={e => set('conteudo', e.target.value)} placeholder="Cole o texto da petição para guardar no sistema…" />
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Arquivo da petição (PDF, DOCX…)</Label>
+          {form.arquivoNome && !file ? (
+            <div className="mt-1 flex items-center gap-2 text-xs bg-blue-50 border border-blue-100 rounded px-2 py-1.5">
+              <Paperclip size={12} className="text-blue-600" />
+              <span className="flex-1 truncate text-blue-800">{form.arquivoNome}</span>
+              <button className="text-gray-400 hover:text-red-500" title="Remover arquivo" onClick={() => { set('arquivoNome', ''); set('arquivoPath', ''); }}><X size={13} /></button>
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center gap-2">
+              <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
+                <Paperclip size={12} /> {file ? 'Trocar arquivo' : 'Anexar arquivo'}
+                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.txt,image/*" onChange={e => setFile(e.target.files?.[0] || null)} />
+              </label>
+              {file && <span className="text-xs text-gray-600 truncate">{file.name}</span>}
+            </div>
+          )}
+        </div>
+        <div className="col-span-2">
           <Label className="text-xs">Observações</Label>
           <Textarea className="mt-1 text-sm" rows={2} value={form.observacoes || ''} onChange={e => set('observacoes', e.target.value)} />
         </div>
       </div>
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onCancel}>Cancelar</Button>
-        <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={() => {
-          if (!form.nome || !form.processoId) { toast.error('Preencha nome e processo.'); return; }
-          onSave(form);
-        }}>Salvar</Button>
+        <Button variant="outline" size="sm" onClick={onCancel} disabled={salvando}>Cancelar</Button>
+        <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={salvar} disabled={salvando}>
+          {salvando ? <><Loader2 size={14} className="animate-spin mr-1" /> Salvando…</> : 'Salvar'}
+        </Button>
       </DialogFooter>
     </div>
   );
@@ -172,6 +211,13 @@ export default function Peticoes() {
     toast.success('Petição restaurada.');
   };
 
+  const baixarArquivo = async (p: Peticao) => {
+    if (!p.arquivoPath) return;
+    const { data, error } = await supabase.storage.from('peticoes').createSignedUrl(p.arquivoPath, 120);
+    if (error || !data?.signedUrl) { toast.error('Não foi possível abrir o arquivo.'); return; }
+    window.open(data.signedUrl, '_blank');
+  };
+
   const handleSave = (data: Omit<Peticao, 'id' | 'criadoEm'>) => {
     if (editPeticao) {
       dispatch({ type: 'UPDATE_PETICAO', payload: { ...editPeticao, ...data } });
@@ -249,6 +295,7 @@ export default function Peticoes() {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <Badge variant="outline" className="capitalize text-[10px]">{pet.tipo}</Badge>
                     <Badge className={`${statusColor[pet.status]} capitalize text-[10px]`}>{pet.status}</Badge>
+                    {pet.arquivoPath && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700" title="Baixar arquivo" onClick={() => baixarArquivo(pet)}><Download size={13} /></Button>}
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditPeticao(pet); setDialogOpen(true); }}><Edit size={12} /></Button>
                     {pet.arquivado
                       ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => restaurarPeticao(pet)}><ArchiveRestore size={13} /></Button>
@@ -265,7 +312,7 @@ export default function Peticoes() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle className="text-[#1e3a5f]">{editPeticao ? 'Editar Petição' : 'Nova Petição'}</DialogTitle></DialogHeader>
-          <PeticaoForm initial={editPeticao ? { nome: editPeticao.nome, processoId: editPeticao.processoId, tipo: editPeticao.tipo, dataProtocolo: editPeticao.dataProtocolo, numeroProtocolo: editPeticao.numeroProtocolo, status: editPeticao.status, observacoes: editPeticao.observacoes } : emptyPeticao()} onSave={handleSave} onCancel={() => { setDialogOpen(false); setEditPeticao(null); }} />
+          <PeticaoForm initial={editPeticao ? { nome: editPeticao.nome, processoId: editPeticao.processoId, tipo: editPeticao.tipo, dataProtocolo: editPeticao.dataProtocolo, numeroProtocolo: editPeticao.numeroProtocolo, status: editPeticao.status, observacoes: editPeticao.observacoes, conteudo: editPeticao.conteudo ?? '', arquivoPath: editPeticao.arquivoPath ?? '', arquivoNome: editPeticao.arquivoNome ?? '' } : emptyPeticao()} onSave={handleSave} onCancel={() => { setDialogOpen(false); setEditPeticao(null); }} />
         </DialogContent>
       </Dialog>
 
