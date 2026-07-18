@@ -13,11 +13,12 @@ import Peticoes from './components/Peticoes';
 import Relatorios from './components/Relatorios';
 import Monitoramento from './components/Monitoramento';
 import Configuracoes from './components/Configuracoes';
+import Ajuda from './components/Ajuda';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
-import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Bot, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Bot, LogOut, HelpCircle } from 'lucide-react';
 
-type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'monitoramento' | 'configuracoes';
+type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'monitoramento' | 'configuracoes' | 'ajuda';
 
 const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -29,6 +30,7 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
   { id: 'monitoramento', label: 'Monitoramento', icon: Bot },
   { id: 'relatorios', label: 'Relatórios', icon: BarChart2 },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
+  { id: 'ajuda', label: 'Ajuda', icon: HelpCircle },
 ];
 
 function AppContent() {
@@ -60,6 +62,7 @@ function AppContent() {
     dashboard: <Dashboard />, clientes: <Clientes />, processos: <Processos />,
     prazos: <Prazos />, publicacoes: <Publicacoes />, peticoes: <Peticoes />,
     monitoramento: <Monitoramento />, relatorios: <Relatorios />, configuracoes: <Configuracoes />,
+    ajuda: <Ajuda />,
   };
 
   return (
