@@ -368,71 +368,73 @@ export default function Publicacoes() {
             {(dataInicio || dataFim) && ` · período${dataInicio ? ` de ${dataInicio}` : ''}${dataFim ? ` até ${dataFim}` : ''}`}
           </p>
 
-          <div className="space-y-3">
-            {filtered.length === 0 && (
-              <p className="text-sm text-gray-500 py-8 text-center">
-                Nenhuma publicação encontrada.
-                {filterStatus === 'ativas' && arquivadas > 0 && (
-                  <span className="block text-xs mt-1 text-slate-400">
-                    Há {arquivadas} publicação(ões) arquivada(s). <button className="underline" onClick={() => setFilterStatus('arquivada')}>Ver arquivadas</button>
-                  </span>
-                )}
-              </p>
-            )}
-            {filtered.map(pub => {
-              const proc = state.processos.find(p => p.id === pub.processoId);
-              const isArquivada = pub.status === 'arquivada';
-              return (
-                <Card
-                  key={pub.id}
-                  className={`hover:shadow-md transition-shadow cursor-pointer ${pub.status === 'não_lida' ? 'border-red-200' : ''} ${isArquivada ? 'opacity-60' : ''}`}
-                  onClick={() => abrirPublicacao(pub)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${pub.status === 'não_lida' ? 'bg-red-500' : pub.status === 'arquivada' ? 'bg-slate-300' : 'bg-gray-300'}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="text-xs font-bold text-[#2563eb]">{pub.tribunal}</span>
-                            <span className="text-xs font-mono text-gray-600">{pub.numeroProcesso}</span>
-                            <span className="text-xs text-gray-400">{pub.data}</span>
-                            <Badge className={`${statusColor[pub.status]} text-[10px] px-1.5`}>{statusLabel[pub.status]}</Badge>
-                          </div>
-                          <p className="text-xs text-gray-700 line-clamp-3">{pub.conteudo}</p>
-                          {proc && <p className="text-xs text-blue-600 mt-1">↳ Vinculado: {proc.numero.slice(0, 20)}...</p>}
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        {!pub.processoId && !isArquivada && (
-                          <Select onValueChange={v => vincularProcesso(pub, v)}>
-                            <SelectTrigger className="h-7 text-[10px] w-28 px-2"><SelectValue placeholder="Vincular proc." /></SelectTrigger>
-                            <SelectContent>
-                              {state.processos.map(p => <SelectItem key={p.id} value={p.id} className="text-xs"><span className="font-mono">{p.numero.slice(0, 15)}...</span></SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        )}
-                        {pub.status !== 'prazo_gerado' && !isArquivada && (
-                          <Button size="sm" className="h-7 text-[10px] bg-[#1e3a5f] hover:bg-[#2563eb] px-2" onClick={() => abrirGerarPrazo(pub)}>
-                            <Clock size={10} className="mr-1" /> Gerar Prazo
-                          </Button>
-                        )}
-                        {isArquivada ? (
-                          <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-slate-600" onClick={() => desarquivar(pub)}>
-                            <ArchiveRestore size={10} className="mr-1" /> Restaurar
-                          </Button>
-                        ) : (
-                          <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2 text-slate-500 hover:text-slate-700" onClick={() => arquivar(pub)}>
-                            <Archive size={10} className="mr-1" /> Arquivar
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          {filtered.length === 0 ? (
+            <p className="text-sm text-gray-500 py-10 text-center">
+              Nenhuma publicação encontrada.
+              {filterStatus === 'ativas' && arquivadas > 0 && (
+                <span className="block text-xs mt-1 text-slate-400">
+                  Há {arquivadas} publicação(ões) arquivada(s). <button className="underline" onClick={() => setFilterStatus('arquivada')}>Ver arquivadas</button>
+                </span>
+              )}
+            </p>
+          ) : (
+            <Card>
+              <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase text-left">
+                    <tr>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">Disponibilização</th>
+                      <th className="px-3 py-2 font-medium">Órgão / Vara</th>
+                      <th className="px-3 py-2 font-medium">Cliente / Parte adversa / Nº processo</th>
+                      <th className="px-3 py-2 font-medium">Tipo</th>
+                      <th className="px-3 py-2 font-medium text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(pub => {
+                      const proc = state.processos.find(p => p.id === pub.processoId);
+                      const cli = proc ? state.clientes.find(c => c.id === proc.clienteId) : null;
+                      const isArquivada = pub.status === 'arquivada';
+                      const naoLida = pub.status === 'não_lida';
+                      const orgao = (pub.conteudo.split('\n')[0].split(' · ').slice(-1)[0] || '').slice(0, 60);
+                      return (
+                        <tr key={pub.id} onClick={() => abrirPublicacao(pub)}
+                          className={`border-t hover:bg-blue-50/40 cursor-pointer ${isArquivada ? 'opacity-50' : ''} ${naoLida ? 'font-semibold text-gray-900' : 'text-gray-600'}`}>
+                          <td className="px-3 py-2.5 whitespace-nowrap align-top">
+                            <div className="flex items-center gap-1.5">
+                              {naoLida && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />}
+                              <span>{pub.data.split('-').reverse().join('/')}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top">
+                            <div className="text-xs"><span className="text-[#2563eb] font-medium">{pub.tribunal}</span></div>
+                            <div className="text-[11px] text-gray-500 font-normal">{orgao}</div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top">
+                            {cli ? (
+                              <div className="text-xs">{cli.nome} <span className="text-gray-400 font-normal">×</span> {proc?.parteContraria || '—'}</div>
+                            ) : <div className="text-[11px] text-amber-600 font-normal">Não vinculada</div>}
+                            <div className="text-[11px] font-mono text-gray-500 font-normal">{pub.numeroProcesso || '—'}</div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top">
+                            <Badge className={`${statusColor[pub.status]} text-[10px] px-1.5 whitespace-nowrap`}>{pub.tipo || statusLabel[pub.status]}</Badge>
+                          </td>
+                          <td className="px-3 py-2.5 text-right whitespace-nowrap align-top" onClick={e => e.stopPropagation()}>
+                            {pub.status !== 'prazo_gerado' && !isArquivada && (
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-[#1e3a5f]" title="Gerar prazo" onClick={() => abrirGerarPrazo(pub)}><Clock size={14} /></Button>
+                            )}
+                            {isArquivada
+                              ? <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600" title="Restaurar" onClick={() => desarquivar(pub)}><ArchiveRestore size={14} /></Button>
+                              : <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => arquivar(pub)}><Archive size={14} /></Button>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="monitoramento" className="mt-4">

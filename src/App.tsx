@@ -21,11 +21,11 @@ import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settin
 type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'monitoramento' | 'configuracoes' | 'ajuda';
 
 const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
+  { id: 'prazos', label: 'Agenda', icon: Clock },
+  { id: 'publicacoes', label: 'Publicações', icon: Bell },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'clientes', label: 'Clientes', icon: Users },
   { id: 'processos', label: 'Processos', icon: Scale },
-  { id: 'prazos', label: 'Agenda', icon: Clock },
-  { id: 'publicacoes', label: 'Publicações', icon: Bell },
   { id: 'peticoes', label: 'Petições', icon: FileText },
   { id: 'monitoramento', label: 'Monitoramento', icon: Bot },
   { id: 'relatorios', label: 'Relatórios', icon: BarChart2 },
@@ -35,7 +35,7 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
 
 function AppContent() {
   const { state, loading } = useApp();
-  const [page, setPage] = useState<Page>('dashboard');
+  const [page, setPage] = useState<Page>('prazos');
 
   if (loading) {
     return (

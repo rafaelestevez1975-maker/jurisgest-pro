@@ -144,7 +144,7 @@ function PrazoForm({ initial, onSave, onCancel }: {
   );
 }
 
-function CalendarioMes({ prazos, onSelect }: { prazos: Prazo[]; processos?: any[]; onSelect: (p: Prazo) => void }) {
+function CalendarioMes({ prazos, onSelect, onSelectDia }: { prazos: Prazo[]; processos?: any[]; onSelect: (p: Prazo) => void; onSelectDia?: (dia: string) => void }) {
   const [mes, setMes] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
 
   const diasNoMes = new Date(mes.getFullYear(), mes.getMonth() + 1, 0).getDate();
@@ -179,12 +179,16 @@ function CalendarioMes({ prazos, onSelect }: { prazos: Prazo[]; processos?: any[
         {Array.from({ length: diasNoMes }).map((_, i) => {
           const dia = i + 1;
           const prsDia = prazosDoMes[dia] || [];
+          const temAberto = prsDia.some(p => p.status === 'pendente');
           const isHoje = hoje.getFullYear() === mes.getFullYear() && hoje.getMonth() === mes.getMonth() && hoje.getDate() === dia;
+          const diaISO = `${mes.getFullYear()}-${String(mes.getMonth() + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
           return (
-            <div key={dia} className={`min-h-[52px] border rounded p-0.5 ${isHoje ? 'bg-blue-50 border-blue-300' : 'border-gray-100 hover:bg-gray-50'}`}>
-              <p className={`text-[11px] font-medium text-right pr-1 ${isHoje ? 'text-blue-600' : 'text-gray-600'}`}>{dia}</p>
+            <div key={dia} onClick={() => onSelectDia?.(diaISO)}
+              className={`min-h-[52px] border rounded p-0.5 cursor-pointer ${isHoje ? 'bg-blue-50 border-blue-300' : 'border-gray-100 hover:bg-gray-50'}`}>
+              <p className={`text-right pr-1 ${temAberto ? 'font-bold text-[#1e3a5f] text-xs' : 'text-[11px] font-medium ' + (isHoje ? 'text-blue-600' : 'text-gray-500')}`}>{dia}</p>
               {prsDia.slice(0, 2).map(p => (
-                <div key={p.id} onClick={() => onSelect(p)} className={`text-[9px] px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80 ${tipoColor[p.tipo]} ${!p.vistoEm && p.status === 'pendente' ? 'ring-1 ring-amber-400' : ''}`}>
+                <div key={p.id} onClick={e => { e.stopPropagation(); onSelect(p); }}
+                  className={`text-[9px] px-1 py-0.5 rounded mb-0.5 truncate cursor-pointer hover:opacity-80 ${tipoColor[p.tipo]} ${p.status !== 'pendente' ? 'line-through opacity-50' : (!p.vistoEm ? 'ring-1 ring-amber-400' : '')}`}>
                   {p.descricao.slice(0, 12)}...
                 </div>
               ))}
@@ -203,9 +207,10 @@ function CalendarioMes({ prazos, onSelect }: { prazos: Prazo[]; processos?: any[
 
 export default function Prazos() {
   const { state, dispatch } = useApp();
-  const [filterStatus, setFilterStatus] = useState<string>('pendente');
+  const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterResp, setFilterResp] = useState<string>('todos');
   const [filterCiencia, setFilterCiencia] = useState<string>('todos');
+  const [filterDia, setFilterDia] = useState<string>('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editPrazo, setEditPrazo] = useState<Prazo | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -220,8 +225,14 @@ export default function Prazos() {
     const matchCiencia = filterCiencia === 'todos' ||
       (filterCiencia === 'visto' && !!p.vistoEm) ||
       (filterCiencia === 'pendente_ciencia' && !p.vistoEm && p.status === 'pendente');
-    return matchStatus && matchResp && matchCiencia;
-  }).sort((a, b) => diasRestantes(a.dataHora) - diasRestantes(b.dataHora));
+    const matchDia = !filterDia || p.dataHora.split('T')[0] === filterDia;
+    return matchStatus && matchResp && matchCiencia && matchDia;
+  }).sort((a, b) => {
+    // pendentes primeiro (por urgência), depois cumpridos/cancelados
+    const rank = (s: string) => (s === 'pendente' ? 0 : 1);
+    if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status);
+    return diasRestantes(a.dataHora) - diasRestantes(b.dataHora);
+  });
 
   const respUnicos = [...new Set(state.prazos.map(p => p.responsavel).filter(Boolean))];
 
@@ -239,7 +250,12 @@ export default function Prazos() {
 
   const marcarCumprido = (id: string) => {
     const p = state.prazos.find(p => p.id === id);
-    if (p) { dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'cumprido' } }); toast.success('Prazo marcado como cumprido!'); }
+    if (p) { dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'cumprido' } }); toast.success('Prazo cumprido — continua na lista, riscado.'); }
+  };
+
+  const reabrirPrazo = (id: string) => {
+    const p = state.prazos.find(p => p.id === id);
+    if (p) { dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'pendente' } }); toast.success('Prazo reaberto.'); }
   };
 
   const confirmarCiencia = (prazoId: string, nome: string) => {
@@ -309,19 +325,28 @@ export default function Prazos() {
 
       {viewMode === 'lista' ? (
         <div className="space-y-2">
+          {filterDia && (
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded px-3 py-1.5 text-xs">
+              <span className="text-blue-800">Mostrando prazos de <b>{filterDia.split('-').reverse().join('/')}</b></span>
+              <button className="text-blue-600 hover:underline" onClick={() => setFilterDia('')}>Ver todos os dias</button>
+            </div>
+          )}
           {filtered.length === 0 && <p className="text-sm text-gray-500 py-8 text-center">Nenhum prazo encontrado.</p>}
           {filtered.map(prazo => {
             const dias = diasRestantes(prazo.dataHora);
             const proc = state.processos.find(p => p.id === prazo.processoId);
             const [data, hora] = prazo.dataHora.split('T');
+            const concluido = prazo.status === 'cumprido' || prazo.status === 'cancelado';
             return (
-              <Card key={prazo.id} className={`border-l-4 ${urgencyStyle(dias, prazo.status)}`}>
+              <Card key={prazo.id} className={`border-l-4 ${urgencyStyle(dias, prazo.status)} ${concluido ? 'opacity-70' : ''}`}>
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-[#1e3a5f]">{prazo.descricao}</span>
+                        <span className={`text-sm font-semibold ${concluido ? 'line-through text-gray-400' : 'text-[#1e3a5f]'}`}>{prazo.descricao}</span>
                         <Badge className={`${tipoColor[prazo.tipo]} text-[10px] px-1.5`}>{prazo.tipo.replace('_', ' ')}</Badge>
+                        {prazo.status === 'cumprido' && <Badge className="bg-green-100 text-green-700 text-[10px] px-1.5"><CheckCircle size={9} className="mr-0.5" />Cumprido</Badge>}
+                        {prazo.status === 'cancelado' && <Badge className="bg-gray-100 text-gray-500 text-[10px] px-1.5">Cancelado</Badge>}
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5 font-mono truncate">{proc?.numero || '—'}</p>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
@@ -344,6 +369,9 @@ export default function Prazos() {
                           <CheckCircle size={13} className="mr-1" />OK
                         </Button>
                       )}
+                      {prazo.status === 'cumprido' && (
+                        <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500 hover:text-blue-600 px-2" onClick={() => reabrirPrazo(prazo.id)}>Reabrir</Button>
+                      )}
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditPrazo(prazo); setDialogOpen(true); }}><Edit size={12} /></Button>
                       {prazo.status !== 'cancelado' && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400 hover:text-red-500" title="Cancelar prazo" onClick={() => setDeleteId(prazo.id)}><XCircle size={13} /></Button>
@@ -358,7 +386,10 @@ export default function Prazos() {
       ) : (
         <Card>
           <CardContent className="p-4">
-            <CalendarioMes prazos={state.prazos} processos={state.processos} onSelect={p => setSelectedPrazo(p)} />
+            <CalendarioMes prazos={state.prazos} processos={state.processos}
+              onSelect={p => setSelectedPrazo(p)}
+              onSelectDia={dia => { setFilterDia(dia); setViewMode('lista'); }} />
+            <p className="text-[10px] text-gray-400 mt-3 flex items-center gap-1"><span className="font-bold text-[#1e3a5f]">15</span> dia em negrito = há prazo em aberto · clique no dia para ver a lista</p>
           </CardContent>
         </Card>
       )}

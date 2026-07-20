@@ -211,14 +211,19 @@ export default function Clientes() {
   const [importOpen, setImportOpen] = useState(false);
   const [arquivarId, setArquivarId] = useState<string | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
+  const [searchBy, setSearchBy] = useState<'cliente' | 'adverso' | 'numero'>('cliente');
   const [editCliente, setEditCliente] = useState<Cliente | null>(null);
   const [viewCliente, setViewCliente] = useState<Cliente | null>(null);
 
+  const termo = search.trim().toLowerCase();
   const filtered = state.clientes.filter(c => {
     if (mostrarArquivados ? !c.arquivado : !!c.arquivado) return false;
-    return c.nome.toLowerCase().includes(search.toLowerCase()) ||
-      c.cpfCnpj.includes(search) ||
-      c.email.toLowerCase().includes(search.toLowerCase());
+    if (!termo) return true;
+    const procsCliente = state.processos.filter(p => p.clienteId === c.id);
+    if (searchBy === 'adverso') return procsCliente.some(p => p.parteContraria.toLowerCase().includes(termo));
+    if (searchBy === 'numero') return procsCliente.some(p => p.numero.toLowerCase().includes(termo));
+    // 'cliente' (padrão): nome, CPF/CNPJ ou email
+    return c.nome.toLowerCase().includes(termo) || c.cpfCnpj.toLowerCase().includes(termo) || c.email.toLowerCase().includes(termo);
   });
   const arquivadosCount = state.clientes.filter(c => c.arquivado).length;
 
@@ -273,52 +278,86 @@ export default function Clientes() {
         </div>
       </div>
 
-      <div className="flex gap-2 items-center">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
-          <Input className="pl-8 h-9 text-sm" placeholder="Buscar por nome, CPF/CNPJ ou email..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Button variant={mostrarArquivados ? 'default' : 'outline'} size="sm" className={`h-9 text-xs ${mostrarArquivados ? 'bg-slate-500 hover:bg-slate-600' : ''}`} onClick={() => setMostrarArquivados(v => !v)}>
-          <Archive size={14} className="mr-1" /> {mostrarArquivados ? 'Ver ativos' : `Arquivados${arquivadosCount ? ` (${arquivadosCount})` : ''}`}
-        </Button>
-      </div>
+      <Card>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="text-xs text-gray-500 font-medium">Pesquisar por:</span>
+            {([['cliente', 'Cliente'], ['adverso', 'Parte adversa'], ['numero', 'Nº do processo']] as const).map(([v, l]) => (
+              <label key={v} className="flex items-center gap-1.5 text-xs cursor-pointer text-gray-700">
+                <input type="radio" name="cliSearchBy" checked={searchBy === v} onChange={() => setSearchBy(v)} className="accent-blue-600" /> {l}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 items-center">
+            <div className="relative flex-1">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+              <Input className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder={searchBy === 'adverso' ? 'Nome da parte adversa…' : searchBy === 'numero' ? 'Número do processo…' : 'Nome, CPF/CNPJ ou email…'} />
+            </div>
+            {search && <Button variant="ghost" size="sm" className="h-9 text-xs text-gray-500" onClick={() => setSearch('')}>Limpar</Button>}
+            <Button variant={mostrarArquivados ? 'default' : 'outline'} size="sm" className={`h-9 text-xs ${mostrarArquivados ? 'bg-slate-500 hover:bg-slate-600' : ''}`} onClick={() => setMostrarArquivados(v => !v)}>
+              <Archive size={14} className="mr-1" /> {mostrarArquivados ? 'Ver ativos' : `Arquivados${arquivadosCount ? ` (${arquivadosCount})` : ''}`}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid gap-3">
-        {filtered.length === 0 && <p className="text-sm text-gray-500 py-8 text-center">Nenhum cliente encontrado.</p>}
-        {filtered.map(cliente => {
-          const procs = processosDoCliente(cliente.id);
-          return (
-            <Card key={cliente.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => setViewCliente(cliente)}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      {cliente.tipo === 'PF' ? <User size={16} className="text-[#2563eb]" /> : <Building2 size={16} className="text-[#2563eb]" />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm text-[#1e3a5f]">{cliente.nome}</p>
-                      <p className="text-xs text-gray-500">{cliente.cpfCnpj}</p>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        <span className="text-xs text-gray-500 flex items-center gap-1"><Mail size={10} />{cliente.email}</span>
-                        <span className="text-xs text-gray-500 flex items-center gap-1"><Phone size={10} />{cliente.celular}</span>
-                        {cliente.cidade && <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={10} />{cliente.cidade}/{cliente.uf}</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge variant="outline" className="text-[10px] px-1.5">{cliente.tipo}</Badge>
-                    <Badge className="bg-blue-100 text-blue-700 text-[10px] px-1.5"><FileText size={9} className="mr-0.5" />{procs.length}</Badge>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={e => { e.stopPropagation(); setEditCliente(cliente); setDialogOpen(true); }}><Edit size={13} /></Button>
-                    {cliente.arquivado
-                      ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={e => { e.stopPropagation(); handleRestaurar(cliente); }}><ArchiveRestore size={13} /></Button>
-                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={e => { e.stopPropagation(); setArquivarId(cliente.id); }}><Archive size={13} /></Button>}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      <Card>
+        <CardContent className="p-0">
+          <div className="px-4 py-2 border-b text-xs text-gray-500">
+            Listagem de clientes — <b className="text-gray-700">{filtered.length}</b> resultado(s)
+          </div>
+          {filtered.length === 0 ? (
+            <p className="text-sm text-gray-500 py-10 text-center">Nenhum cliente encontrado.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-[11px] text-gray-500 uppercase text-left">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">Cliente</th>
+                    <th className="px-3 py-2 font-medium">Tipo</th>
+                    <th className="px-3 py-2 font-medium hidden sm:table-cell">Contato</th>
+                    <th className="px-3 py-2 font-medium text-center">Processos</th>
+                    <th className="px-4 py-2 font-medium text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(cliente => {
+                    const procs = processosDoCliente(cliente.id);
+                    return (
+                      <tr key={cliente.id} className={`border-t hover:bg-blue-50/40 cursor-pointer ${cliente.arquivado ? 'opacity-60' : ''}`} onClick={() => setViewCliente(cliente)}>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            {cliente.tipo === 'PF' ? <User size={14} className="text-[#2563eb] flex-shrink-0" /> : <Building2 size={14} className="text-[#2563eb] flex-shrink-0" />}
+                            <div className="min-w-0">
+                              <p className="font-medium text-[#1e3a5f] truncate">{cliente.nome}</p>
+                              {cliente.cpfCnpj && <p className="text-[11px] text-gray-400">{cliente.cpfCnpj}</p>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5"><Badge variant="outline" className="text-[10px] px-1.5">{cliente.tipo}</Badge></td>
+                        <td className="px-3 py-2.5 hidden sm:table-cell text-xs text-gray-500">
+                          {cliente.email && <div className="flex items-center gap-1 truncate"><Mail size={10} />{cliente.email}</div>}
+                          {cliente.celular && <div className="flex items-center gap-1"><Phone size={10} />{cliente.celular}</div>}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <Badge className="bg-blue-100 text-blue-700 text-[10px] px-1.5"><FileText size={9} className="mr-0.5" />{procs.length}</Badge>
+                        </td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Editar" onClick={() => { setEditCliente(cliente); setDialogOpen(true); }}><Edit size={13} /></Button>
+                          {cliente.arquivado
+                            ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => handleRestaurar(cliente)}><ArchiveRestore size={13} /></Button>
+                            : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(cliente.id)}><Archive size={13} /></Button>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Dialog Cadastro/Edição */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
