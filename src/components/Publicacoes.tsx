@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useApp, genId } from '../context';
+import { supabase } from '../lib/supabase';
+import { adicionarDiasUteis } from '../data';
 import type { Publicacao, StatusPublicacao } from '../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,8 +11,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, Bell, Clock, ExternalLink, AlertCircle, Archive, ArchiveRestore } from 'lucide-react';
+import { Upload, Bell, Clock, ExternalLink, AlertCircle, Archive, ArchiveRestore, RefreshCw, CheckCheck, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+
+// Detecta o prazo (nº de dias) mencionado no texto da intimação
+function detectarPrazoDias(texto: string): number | null {
+  if (!texto) return null;
+  const t = texto.toLowerCase();
+  const m = t.match(/(?:no\s+)?prazo\s+(?:legal\s+|comum\s+|de\s+lei\s+)?de\s+(\d{1,3})/)
+    || t.match(/(?:\bem|dentro\s+de|no\s+prazo\s+de|prazo\s+de)\s+(\d{1,3})\s*(?:\([^)]*\)\s*)?dias/)
+    || t.match(/(\d{1,3})\s*\(?[^)]*\)?\s*dias\s*(?:úteis|uteis|corridos)/)
+    || t.match(/prazo[^.]{0,25}?(\d{1,3})\s*dias/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return n >= 1 && n <= 90 ? n : null;
+}
 
 const TRIBUNAIS_MONIT = [
   { nome: 'TJSP', url: 'https://esaj.tjsp.jus.br/dje/', desc: 'Diário de Justiça Eletrônico do TJSP' },
@@ -93,7 +108,9 @@ function ImportCSVPub({ onImport, onClose }: { onImport: (pubs: Omit<Publicacao,
 }
 
 export default function Publicacoes() {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, reload } = useApp();
+  const [capturando, setCapturando] = useState(false);
+  const [prazoDiasDetectados, setPrazoDiasDetectados] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('ativas');
   const [filterTribunal, setFilterTribunal] = useState<string>('todos');
   const [filterVinculo, setFilterVinculo] = useState<string>('todos');
@@ -153,6 +170,43 @@ export default function Publicacoes() {
     toast.success('Processo vinculado!');
   };
 
+  // Buscar intimações novas no CNJ (DJEN) agora
+  const capturarIntimacoes = async () => {
+    setCapturando(true);
+    toast.info('Buscando intimações no Diário Nacional (CNJ)…');
+    try {
+      const { data, error } = await supabase.functions.invoke('capturar-intimacoes', { body: { dias: 30 } });
+      if (error) throw error;
+      if (data?.erro) toast.error(data.mensagem || 'Falha na captura.');
+      else {
+        toast.success(`${data.novas_intimacoes} intimação(ões) nova(s).`);
+        await reload();
+      }
+    } catch (e) {
+      toast.error('Falha ao buscar intimações: ' + ((e as Error)?.message || e));
+    }
+    setCapturando(false);
+  };
+
+  const marcarTodasLidas = () => {
+    const naoLidasVis = filtered.filter(p => p.status === 'não_lida');
+    naoLidasVis.forEach(p => dispatch({ type: 'UPDATE_PUBLICACAO', payload: { ...p, status: 'lida' } }));
+    toast.success(`${naoLidasVis.length} marcada(s) como lida(s).`);
+  };
+
+  // Abre "Gerar Prazo" já sugerindo descrição e data (detecta o prazo no texto)
+  const abrirGerarPrazo = (pub: Publicacao) => {
+    const dias = detectarPrazoDias(pub.conteudo);
+    const feriados = state.feriadosMunicipais.map(f => f.data);
+    const hoje = new Date().toISOString().split('T')[0];
+    setPrazoDiasDetectados(dias);
+    setPrazoDescricao(pub.tipo ? `${pub.tipo} — ${pub.tribunal}` : `Providência — ${pub.tribunal}`);
+    setPrazoData(dias ? adicionarDiasUteis(hoje, dias, feriados) : '');
+    setPrazoResp(state.advogados[0]?.nome || '');
+    setViewPub(null);
+    setGerarPrazoId(pub.id);
+  };
+
   const handleGerarPrazo = (pubId: string) => {
     const pub = state.publicacoes.find(p => p.id === pubId);
     if (!pub || !prazoDescricao || !prazoData) { toast.error('Preencha descrição e data.'); return; }
@@ -171,6 +225,7 @@ export default function Publicacoes() {
     setPrazoDescricao('');
     setPrazoData('');
     setPrazoResp('');
+    setPrazoDiasDetectados(null);
   };
 
   const handleImport = (rows: Omit<Publicacao, 'id' | 'criadoEm'>[]) => {
@@ -214,9 +269,20 @@ export default function Publicacoes() {
             {arquivadas > 0 && <p className="text-sm text-slate-400 flex items-center gap-1"><Archive size={12} />{arquivadas} arquivada(s)</p>}
           </div>
         </div>
-        <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}>
-          <Upload size={14} className="mr-1" /> Importar CSV
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          {naoLidas > 0 && (
+            <Button variant="outline" size="sm" className="text-xs" onClick={marcarTodasLidas}>
+              <CheckCheck size={14} className="mr-1" /> Marcar lidas
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}>
+            <Upload size={14} className="mr-1" /> Importar CSV
+          </Button>
+          <Button size="sm" className="text-xs bg-green-600 hover:bg-green-700" onClick={capturarIntimacoes} disabled={capturando}>
+            {capturando ? <Loader2 size={14} className="animate-spin mr-1" /> : <RefreshCw size={14} className="mr-1" />}
+            Buscar intimações (CNJ)
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="publicacoes">
@@ -347,7 +413,7 @@ export default function Publicacoes() {
                           </Select>
                         )}
                         {pub.status !== 'prazo_gerado' && !isArquivada && (
-                          <Button size="sm" className="h-7 text-[10px] bg-[#1e3a5f] hover:bg-[#2563eb] px-2" onClick={() => setGerarPrazoId(pub.id)}>
+                          <Button size="sm" className="h-7 text-[10px] bg-[#1e3a5f] hover:bg-[#2563eb] px-2" onClick={() => abrirGerarPrazo(pub)}>
                             <Clock size={10} className="mr-1" /> Gerar Prazo
                           </Button>
                         )}
@@ -454,7 +520,7 @@ export default function Publicacoes() {
                     ? <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { desarquivar(viewPub); setViewPub(null); }}><ArchiveRestore size={14} className="mr-1" /> Restaurar</Button>
                     : <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { arquivar(viewPub); setViewPub(null); }}><Archive size={14} className="mr-1" /> Arquivar</Button>}
                   {viewPub.status !== 'prazo_gerado' && viewPub.status !== 'arquivada' && (
-                    <Button size="sm" className="bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={() => { setGerarPrazoId(viewPub.id); setViewPub(null); }}>
+                    <Button size="sm" className="bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={() => abrirGerarPrazo(viewPub)}>
                       <Clock size={14} className="mr-1" /> Gerar Prazo
                     </Button>
                   )}
@@ -470,6 +536,11 @@ export default function Publicacoes() {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Gerar Prazo a partir da Publicação</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            {prazoDiasDetectados != null && (
+              <p className="text-xs text-green-800 bg-green-50 border border-green-200 rounded px-2 py-1.5 flex items-center gap-1.5">
+                <Sparkles size={12} className="text-green-600" /> Detectei <b>prazo de {prazoDiasDetectados} dias</b> na intimação — a data limite já foi sugerida (em dias úteis). Confira e ajuste se necessário.
+              </p>
+            )}
             <div>
               <Label className="text-xs">Descrição do Prazo *</Label>
               <Input className="mt-1 h-8 text-sm" value={prazoDescricao} onChange={e => setPrazoDescricao(e.target.value)} placeholder="Ex: Contrarrazões de recurso" />

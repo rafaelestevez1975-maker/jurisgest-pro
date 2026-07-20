@@ -32,6 +32,20 @@ export function contarDiasUteis(dataInicio: string, dataFim: string, feriadosMun
   return count;
 }
 
+// Soma N dias úteis a uma data (pula fins de semana e feriados). dataInicio ISO (YYYY-MM-DD).
+export function adicionarDiasUteis(dataInicio: string, dias: number, feriadosMunicipais: string[] = []): string {
+  const feriados = new Set([...FERIADOS_NACIONAIS, ...feriadosMunicipais]);
+  const d = new Date(dataInicio + 'T12:00:00');
+  let contados = 0;
+  while (contados < dias) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    const ds = d.toISOString().split('T')[0];
+    if (dow !== 0 && dow !== 6 && !feriados.has(ds)) contados++;
+  }
+  return d.toISOString().split('T')[0];
+}
+
 export function diasRestantes(dataHora: string): number {
   const hoje2 = new Date();
   hoje2.setHours(0, 0, 0, 0);
