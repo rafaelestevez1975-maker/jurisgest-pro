@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
-import { useApp, genId } from '../context';
+import { useState, useMemo, useEffect } from 'react';
+import { useApp, genId, logAcao } from '../context';
 import { db } from '../lib/db';
-import type { Processo, Cliente, AreaDireito, FaseProcessual, StatusProcesso, PoloProcesso, Movimentacao } from '../types';
+import type { Processo, Cliente, AreaDireito, FaseProcessual, StatusProcesso, PoloProcesso, Movimentacao, TipoPrazo, Prazo, Documento } from '../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -11,13 +11,109 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
+import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus, Bot, Link2, GitMerge, Download, Check, ChevronsUpDown, Sparkles, CheckCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
-const AREAS: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','outro'];
+const AREAS: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','procon','outro'];
 const FASES: FaseProcessual[] = ['conhecimento','recursal','execução','outro'];
-const STATUS_LIST: StatusProcesso[] = ['ativo','arquivado','ganho','perdido','acordo'];
+const STATUS_LIST: StatusProcesso[] = ['ativo','suspenso','arquivado','ganho','perdido','acordo'];
 const TRIBUNAIS = ['TJSP','TJRJ','TJMG','TJRS','TJPR','TJSC','TJBA','TJPE','TJCE','TRT1','TRT2','TRT3','TRT4','TRT15','TRF1','TRF2','TRF3','TRF4','TRF5','STJ','STF','TST','JFSP','JFRJ','Outro'];
+const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+
+// Combobox com busca no topo + opção de criar um valor novo digitando.
+// Guarda texto livre (tribunal/comarca/UF); o que já foi usado vira sugestão.
+function ComboBox({ value, onChange, options, placeholder = 'Selecione ou digite...', allowCustom = true }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder?: string;
+  allowCustom?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const norm = (s: string) => (s || '').toLowerCase().trim();
+  const filtered = options.filter(o => norm(o).includes(norm(query)));
+  const jaExiste = options.some(o => norm(o) === norm(query));
+  const commit = (v: string) => { onChange(v.trim()); setOpen(false); setQuery(''); };
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(''); }}>
+      <PopoverTrigger asChild>
+        <button type="button" className="mt-1 h-8 w-full text-sm border rounded-md px-3 flex items-center justify-between bg-white hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <span className={`truncate ${value ? 'text-gray-900' : 'text-gray-400'}`}>{value || placeholder}</span>
+          <ChevronsUpDown size={14} className="text-gray-400 flex-shrink-0 ml-1" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)] min-w-[180px]" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Buscar ou digitar novo..." value={query} onValueChange={setQuery} className="h-9 text-sm" />
+          <CommandList>
+            {filtered.length === 0 && !(allowCustom && query.trim()) && <CommandEmpty className="text-xs py-3 text-center text-gray-400">Nada encontrado.</CommandEmpty>}
+            <CommandGroup>
+              {filtered.map(o => (
+                <CommandItem key={o} value={o} onSelect={() => commit(o)} className="text-sm">
+                  <Check size={14} className={`mr-2 flex-shrink-0 ${norm(o) === norm(value) ? 'opacity-100 text-blue-600' : 'opacity-0'}`} />
+                  {o}
+                </CommandItem>
+              ))}
+              {allowCustom && query.trim() && !jaExiste && (
+                <CommandItem value={`__add__${query}`} onSelect={() => commit(query)} className="text-sm text-blue-600">
+                  <Plus size={14} className="mr-2 flex-shrink-0" /> Adicionar “{query.trim()}”
+                </CommandItem>
+              )}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Seletor de cliente COM BUSCA por digitação (filtra a lista, sem precisar rolar tudo).
+// Diferente do ComboBox: seleciona um cliente EXISTENTE por id (não cria texto livre).
+function ClienteCombo({ value, onChange, clientes }: {
+  value: string;
+  onChange: (id: string) => void;
+  clientes: { id: string; nome: string; arquivado?: boolean }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const q = norm(query);
+  // Esconde clientes arquivados da lista (evita duplicados fantasmas), mas mantém o que já está selecionado.
+  const base = clientes.filter(c => !c.arquivado || c.id === value);
+  const filtered = q ? base.filter(c => norm(c.nome).includes(q)) : base;
+  const selecionado = clientes.find(c => c.id === value);
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(''); }}>
+      <PopoverTrigger asChild>
+        <button type="button" className="mt-1 h-8 w-full text-sm border rounded-md px-3 flex items-center justify-between bg-white hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <span className={`truncate ${selecionado ? 'text-gray-900' : 'text-gray-400'}`}>{selecionado ? selecionado.nome : 'Selecione...'}</span>
+          <ChevronsUpDown size={14} className="text-gray-400 flex-shrink-0 ml-1" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)] min-w-[240px]" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Digite o nome do cliente..." value={query} onValueChange={setQuery} className="h-9 text-sm" autoFocus />
+          <CommandList>
+            {filtered.length === 0 && <CommandEmpty className="text-xs py-3 text-center text-gray-400">Nenhum cliente encontrado.</CommandEmpty>}
+            <CommandGroup>
+              {filtered.map(c => (
+                <CommandItem key={c.id} value={c.id} onSelect={() => { onChange(c.id); setOpen(false); setQuery(''); }} className="text-sm">
+                  <Check size={14} className={`mr-2 flex-shrink-0 ${value === c.id ? 'opacity-100 text-blue-600' : 'opacity-0'}`} />
+                  {c.nome}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+// Tipos de andamento sugeridos (padronizam a categoria; ainda é possível digitar outro)
+export const TIPOS_ANDAMENTO = ['Observação','Acordo','Suspenso','Sentença','Decisão','Despacho','Audiência','Petição','Recurso','Cumprimento de sentença','Baixa','Arquivamento','Distribuição','Outro'];
 
 // DataJud API key (public, shared by CNJ for open access)
 const DATAJUD_API_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==';
@@ -72,6 +168,7 @@ function inferirArea(classeNome: string): AreaDireito {
   if (c.includes('tribut') || c.includes('fiscal') || c.includes('imposto') || c.includes('icms') || c.includes('iss')) return 'tributário';
   if (c.includes('empresa') || c.includes('societári') || c.includes('falênc') || c.includes('recuperaç')) return 'empresarial';
   if (c.includes('administrat') || c.includes('mandado') || c.includes('improbidade')) return 'administrativo';
+  if (c.includes('procon') || c.includes('consumidor')) return 'procon';
   return 'cível';
 }
 
@@ -188,32 +285,79 @@ function parsearTexto(texto: string): Partial<Omit<Processo, 'id' | 'criadoEm' |
   return result;
 }
 
-async function analisarComClaudeVision(
-  base64: string,
-  mimeType: string,
-  apiKey: string
-): Promise<{ dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>; partes: { poloAtivo: string; poloPassivo: string }; textoExtraido: string }> {
+// Modelo de visão (rápido/barato) usado nas extrações e no resumo.
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
+
+// Chamada genérica à API do Claude (browser direto). Centraliza modelo, headers e erros.
+async function chamarClaudeAPI(apiKey: string, content: unknown, maxTokens = 1024): Promise<string> {
+  const key = (apiKey || '').trim();
+  // Erros claros/acionáveis antes de bater na API:
+  if (!key) {
+    throw new Error('Nenhuma API key da Anthropic configurada. Cole uma API key (sk-ant-api03-…) em Configurações › Escritório para usar a análise por IA.');
+  }
+  if (key.startsWith('sk-ant-oat')) {
+    throw new Error('A chave salva é um token OAuth do Claude Code (sk-ant-oat…), que serve para as petições — NÃO para a análise de imagem. Gere uma API key em console.anthropic.com (começa com sk-ant-api03-…) e cole em Configurações › Escritório.');
+  }
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      'x-api-key': apiKey,
+      'x-api-key': key,
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mimeType, data: base64 },
-          },
-          {
-            type: 'text',
-            text: `Analise esta imagem de um documento ou tela de sistema jurídico brasileiro e extraia APENAS as informações processuais em JSON válido com esta estrutura:
+    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    let msg = (err as { error?: { message?: string } })?.error?.message || `HTTP ${resp.status}`;
+    if (resp.status === 401 || /x-api-key|authentication|invalid.*key/i.test(msg)) {
+      msg = 'API key inválida ou sem crédito. Confira a chave (sk-ant-api03-…) em Configurações › Escritório e o saldo na conta Anthropic.';
+    }
+    throw new Error(`Falha na integração com o Claude: ${msg}`);
+  }
+  const data = await resp.json();
+  return ((data.content as { type: string; text?: string }[]) || [])
+    .filter(b => b.type === 'text').map(b => b.text || '').join('\n');
+}
+
+// Comprime/normaliza qualquer imagem para JPEG (fundo branco) com lado máx. ~1600px.
+// Resolve o erro de integração causado por imagem grande demais ou media_type não suportado.
+function comprimirImagem(file: File, maxLado = 1600, quality = 0.85): Promise<{ base64: string; mime: string; dataUrl: string; nome: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo de imagem.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Arquivo não é uma imagem válida.'));
+      img.onload = () => {
+        const escala = Math.min(1, maxLado / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * escala));
+        const h = Math.max(1, Math.round(img.height * escala));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('Não foi possível processar a imagem.')); return; }
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg', dataUrl, nome: file.name || 'imagem.jpg' });
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function analisarComClaudeVision(
+  imagens: { base64: string; mime: string }[],
+  apiKey: string
+): Promise<{ dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>; partes: { poloAtivo: string; poloPassivo: string }; textoExtraido: string }> {
+  const content = [
+    ...imagens.map(img => ({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.base64 } })),
+    {
+      type: 'text',
+      text: `Estas são uma ou mais imagens (páginas/telas diferentes) do MESMO processo judicial brasileiro. Combine as informações de todas e extraia APENAS os dados processuais em JSON válido com esta estrutura:
 {
   "numero": "número CNJ completo (NNNNNNN-DD.AAAA.J.TT.OOOO)",
   "tribunal": "sigla do tribunal (ex: TJSP, TRT2, STJ)",
@@ -225,24 +369,14 @@ async function analisarComClaudeVision(
   "dataDistribuicao": "data no formato YYYY-MM-DD ou null",
   "classe": "classe processual (ex: Reclamação Trabalhista, Ação de Cobrança)",
   "assunto": "assunto principal do processo",
-  "textoExtraido": "todo o texto relevante extraído da imagem"
+  "textoExtraido": "todo o texto relevante extraído das imagens"
 }
-Retorne APENAS o JSON, sem explicações.`
-          }
-        ]
-      }]
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error((err as any)?.error?.message || `Erro ${resp.status} ao chamar Claude API.`);
-  }
-
-  const data = await resp.json();
-  const text = data.content?.[0]?.text || '{}';
+Retorne APENAS o JSON, sem explicações.`,
+    },
+  ];
+  const text = await chamarClaudeAPI(apiKey, content, 1500);
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Claude não retornou JSON válido.');
+  if (!jsonMatch) throw new Error('O Claude não retornou um JSON válido para a(s) imagem(ns).');
   const parsed = JSON.parse(jsonMatch[0]);
 
   return {
@@ -264,24 +398,19 @@ Retorne APENAS o JSON, sem explicações.`
   };
 }
 
+// Resumo do caso com IA a partir dos dados já preenchidos do processo.
+async function resumirCasoComClaude(apiKey: string, contexto: string): Promise<string> {
+  const text = await chamarClaudeAPI(apiKey,
+    `Você é um assistente jurídico. Com base nos dados abaixo de um processo judicial brasileiro, escreva um RESUMO objetivo do caso em português (3 a 6 frases): do que se trata, quem são as partes, o pedido/objeto, a situação atual e o valor, quando houver. NÃO invente fatos que não estejam nos dados. Escreva em texto corrido, sem markdown e sem títulos.\n\nDADOS DO PROCESSO:\n${contexto}`,
+    600);
+  return text.trim();
+}
+
 async function analisarTextoComClaude(
   texto: string,
   apiKey: string
 ): Promise<{ dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>; partes: { poloAtivo: string; poloPassivo: string } }> {
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `Analise este texto copiado de um sistema jurídico brasileiro e extraia as informações processuais em JSON válido:
+  const promptText = `Analise este texto copiado de um sistema jurídico brasileiro e extraia as informações processuais em JSON válido:
 {
   "numero": "número CNJ completo (NNNNNNN-DD.AAAA.J.TT.OOOO) ou null",
   "tribunal": "sigla do tribunal (TJSP, TRT2, STJ, etc.) ou null",
@@ -297,18 +426,8 @@ async function analisarTextoComClaude(
 TEXTO:
 ${texto}
 
-Retorne APENAS o JSON.`
-      }]
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error((err as any)?.error?.message || `Erro ${resp.status} ao chamar Claude API.`);
-  }
-
-  const data = await resp.json();
-  const text = data.content?.[0]?.text || '{}';
+Retorne APENAS o JSON.`;
+  const text = await chamarClaudeAPI(apiKey, promptText, 1024);
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('Claude não retornou JSON válido.');
   const parsed = JSON.parse(jsonMatch[0]);
@@ -340,9 +459,8 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
   const [tab, setTab] = useState<'imagem' | 'texto' | 'datajud'>('imagem');
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
-  const [preview, setPreview] = useState<string>('');
-  const [imageBase64, setImageBase64] = useState('');
-  const [imageMime, setImageMime] = useState('');
+  const [imagens, setImagens] = useState<{ base64: string; mime: string; dataUrl: string; nome: string }[]>([]);
+  const [comprimindo, setComprimindo] = useState(false);
   const [texto, setTexto] = useState('');
   const [resultado, setResultado] = useState<{
     dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>;
@@ -352,28 +470,25 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
   const [clienteId, setClienteId] = useState('');
   const [consultandoDataJud, setConsultandoDataJud] = useState(false);
 
-  const handleImagem = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target?.result as string;
-      setPreview(dataUrl);
-      const base64 = dataUrl.split(',')[1];
-      setImageBase64(base64);
-      setImageMime(file.type as string);
-      setResultado(null);
-      setErro('');
-    };
-    reader.readAsDataURL(file);
+  const handleImagem = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setComprimindo(true); setErro(''); setResultado(null);
+    try {
+      const novos = await Promise.all(files.map(f => comprimirImagem(f)));
+      setImagens(prev => [...prev, ...novos]);
+    } catch (err: any) { setErro(err.message || 'Falha ao carregar a imagem.'); }
+    setComprimindo(false);
+    e.target.value = '';
   };
+  const removerImagem = (i: number) => setImagens(prev => prev.filter((_, idx) => idx !== i));
 
   const analisarImagem = async () => {
     if (!apiKey) { setErro('Configure a Chave API Anthropic nas Configurações do sistema primeiro.'); return; }
-    if (!imageBase64) { setErro('Selecione uma imagem primeiro.'); return; }
+    if (!imagens.length) { setErro('Selecione ao menos uma imagem.'); return; }
     setLoading(true); setErro(''); setResultado(null);
     try {
-      const res = await analisarComClaudeVision(imageBase64, imageMime, apiKey);
+      const res = await analisarComClaudeVision(imagens.map(i => ({ base64: i.base64, mime: i.mime })), apiKey);
       setResultado({ dados: res.dados, partes: res.partes, consultarDataJud: !!res.dados.numero });
     } catch (e: any) { setErro(e.message); }
     setLoading(false);
@@ -442,7 +557,11 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
     const dados = resultado.dados as any;
     const movs: Movimentacao[] = dados._movs || [];
     const { _movs: _removed, ...dadosLimpos } = dados;
-    onPreencherFormulario({ ...dadosLimpos, clienteId, movimentacoes: movs });
+    // Anexa o 1º print (aba imagem) para ser salvo no Storage e vinculado ao processo
+    const _image = (tab === 'imagem' && imagens.length)
+      ? { base64: imagens[0].base64, mime: imagens[0].mime, nome: imagens[0].nome }
+      : undefined;
+    onPreencherFormulario({ ...dadosLimpos, clienteId, movimentacoes: movs, _image } as any);
     onClose();
   };
 
@@ -477,25 +596,33 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
         <TabsContent value="imagem" className="space-y-3 mt-3">
           <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
             <p className="font-semibold flex items-center gap-1.5"><Brain size={12} />Análise por IA (Claude Vision)</p>
-            <p className="mt-0.5">Faça upload de qualquer print de tela — PJe, e-SAJ, Integra, DJe, e-Proc, etc. A IA extrai automaticamente número, partes, vara, tribunal, valor e data.</p>
+            <p className="mt-0.5">Selecione <b>uma ou mais imagens</b> do mesmo processo (prints do PJe, e-SAJ, Integra, DJe, e-Proc, capa dos autos…). A IA combina tudo e extrai número, partes, vara, tribunal, valor e data. As imagens são otimizadas automaticamente antes do envio.</p>
           </div>
-          <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-blue-300 transition-colors">
-            <input type="file" accept="image/*" id="img-upload" className="hidden" onChange={handleImagem} />
-            <label htmlFor="img-upload" className="cursor-pointer block">
-              {preview ? (
-                <img src={preview} alt="preview" className="max-h-48 mx-auto rounded shadow object-contain" />
-              ) : (
-                <div className="py-6">
-                  <ImageIcon size={32} className="mx-auto text-gray-300 mb-2" />
-                  <p className="text-sm text-gray-500 font-medium">Clique para selecionar imagem</p>
-                  <p className="text-xs text-gray-400 mt-1">JPG, PNG, GIF, WebP — print de tela de qualquer sistema</p>
+          <input type="file" accept="image/*" multiple id="img-upload" className="hidden" onChange={handleImagem} />
+          {imagens.length > 0 && (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {imagens.map((img, i) => (
+                <div key={i} className="relative group border rounded overflow-hidden">
+                  <img src={img.dataUrl} alt={img.nome} className="h-20 w-full object-cover" />
+                  <button type="button" onClick={() => removerImagem(i)} title="Remover" className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X size={11} /></button>
                 </div>
-              )}
-            </label>
-          </div>
-          {preview && (
-            <Button className="w-full h-9 bg-[#2563eb] hover:bg-blue-700 text-sm" onClick={analisarImagem} disabled={loading}>
-              {loading ? <><Loader2 size={14} className="animate-spin mr-2" />Analisando com IA...</> : <><Brain size={14} className="mr-2" />Analisar Imagem com IA</>}
+              ))}
+            </div>
+          )}
+          <label htmlFor="img-upload" className="cursor-pointer block border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-blue-300 transition-colors">
+            {comprimindo ? (
+              <div className="py-4 text-sm text-gray-500 flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> Otimizando imagem…</div>
+            ) : (
+              <div className="py-4">
+                <ImageIcon size={28} className="mx-auto text-gray-300 mb-1" />
+                <p className="text-sm text-gray-500 font-medium">{imagens.length ? 'Adicionar mais imagens' : 'Clique para selecionar imagem(ns)'}</p>
+                <p className="text-xs text-gray-400 mt-1">JPG, PNG, GIF, WebP — pode selecionar várias de uma vez</p>
+              </div>
+            )}
+          </label>
+          {imagens.length > 0 && (
+            <Button className="w-full h-9 bg-[#2563eb] hover:bg-blue-700 text-sm" onClick={analisarImagem} disabled={loading || comprimindo}>
+              {loading ? <><Loader2 size={14} className="animate-spin mr-2" />Analisando com IA...</> : <><Brain size={14} className="mr-2" />Analisar {imagens.length > 1 ? `${imagens.length} imagens` : 'imagem'} com IA</>}
             </Button>
           )}
         </TabsContent>
@@ -573,10 +700,7 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
           )}
           <div className="px-3 pb-3 border-t pt-3">
             <Label className="text-xs font-semibold">Vincular a cliente cadastrado</Label>
-            <Select value={clienteId} onValueChange={setClienteId}>
-              <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione (opcional)" /></SelectTrigger>
-              <SelectContent>{state.clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
-            </Select>
+            <ClienteCombo value={clienteId} onChange={setClienteId} clientes={state.clientes} />
           </div>
         </div>
       )}
@@ -768,12 +892,7 @@ function DialogBuscarDataJud({ onPreencherFormulario, onClose, embedded }: {
             {/* Vincular cliente */}
             <div className="border-t pt-3">
               <Label className="text-xs font-semibold">Vincular a um cliente cadastrado</Label>
-              <Select value={clienteId} onValueChange={setClienteId}>
-                <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione o cliente (opcional)" /></SelectTrigger>
-                <SelectContent>
-                  {state.clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <ClienteCombo value={clienteId} onChange={setClienteId} clientes={state.clientes} />
               <p className="text-[10px] text-gray-400 mt-1">Parte ativa identificada: <strong>{poleAtivo?.nome || '—'}</strong></p>
             </div>
           </div>
@@ -799,6 +918,7 @@ function DialogBuscarDataJud({ onPreencherFormulario, onClose, embedded }: {
 
 const statusColor: Record<StatusProcesso, string> = {
   ativo: 'bg-blue-100 text-blue-700',
+  suspenso: 'bg-orange-100 text-orange-700',
   arquivado: 'bg-gray-100 text-gray-600',
   ganho: 'bg-green-100 text-green-700',
   perdido: 'bg-red-100 text-red-700',
@@ -806,7 +926,7 @@ const statusColor: Record<StatusProcesso, string> = {
 };
 
 const emptyProcesso = (): Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'> => ({
-  numero: '', clienteId: '', vara: '', tribunal: '', comarca: '', area: 'cível',
+  numero: '', clienteId: '', vara: '', tribunal: '', comarca: '', uf: '', area: 'cível',
   fase: 'conhecimento', parteContraria: '', advogadoResponsavel: '', valorCausa: undefined,
   dataDistribuicao: '', status: 'ativo', polo: 'autor', objeto: '', observacoes: '',
 });
@@ -819,7 +939,39 @@ function ProcessoForm({ initial, onSave, onCancel }: {
   const { state } = useApp();
   const [form, setForm] = useState(initial);
   const [pendingMovs, setPendingMovs] = useState<Movimentacao[]>([]);
+  const [resumindo, setResumindo] = useState(false);
   const set = (k: keyof typeof form, v: unknown) => setForm(f => ({ ...f, [k]: v }));
+
+  // Gera um resumo do caso com IA a partir dos dados já preenchidos, e adiciona às observações.
+  const gerarResumoIA = async () => {
+    const apiKey = state.anthropicApiKey;
+    if (!apiKey) { toast.error('Configure a Chave API Anthropic em Configurações → Integrações IA.'); return; }
+    const cliente = state.clientes.find(c => c.id === form.clienteId);
+    const ctx = [
+      `Número: ${form.numero || '—'}`,
+      `Cliente (nosso): ${cliente?.nome || '—'} — polo ${form.polo}`,
+      `Parte contrária: ${form.parteContraria || '—'}`,
+      `Área: ${form.area} | Fase: ${form.fase} | Situação: ${form.status}`,
+      `Tribunal: ${form.tribunal || '—'} | Comarca: ${form.comarca || '—'}${form.uf ? '/' + form.uf : ''} | Vara: ${form.vara || '—'}`,
+      `Valor da causa: ${form.valorCausa ? 'R$ ' + form.valorCausa.toLocaleString('pt-BR') : '—'}`,
+      `Objeto/assunto: ${form.objeto || '—'}`,
+      form.observacoes ? `Observações atuais: ${form.observacoes}` : '',
+    ].filter(Boolean).join('\n');
+    setResumindo(true);
+    try {
+      const resumo = await resumirCasoComClaude(apiKey, ctx);
+      set('observacoes', form.observacoes ? `${form.observacoes}\n\nResumo do caso (IA):\n${resumo}` : `Resumo do caso (IA):\n${resumo}`);
+      toast.success('Resumo gerado e adicionado às observações.');
+    } catch (e: unknown) { toast.error((e as Error)?.message || 'Falha ao gerar o resumo.'); }
+    setResumindo(false);
+  };
+
+  // Opções dos comboboxes: lista padrão + o que já foi usado nos processos (sugestões),
+  // ordenado. O usuário ainda pode digitar um valor novo (allowCustom).
+  const uniqSort = (arr: (string | undefined)[]) => Array.from(new Set(arr.filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const tribunalOpts = uniqSort([...TRIBUNAIS, ...state.processos.map(p => p.tribunal)]);
+  const comarcaOpts = uniqSort(state.processos.map(p => p.comarca));
+  const ufOpts = uniqSort([...UFS, ...state.processos.map(p => p.uf)]);
 
   // expose a way for parent to update form (DataJud prefill)
   return (
@@ -834,26 +986,27 @@ function ProcessoForm({ initial, onSave, onCancel }: {
         <div className="col-span-2">
           <Label className="text-xs">Número CNJ *</Label>
           <Input className="mt-1 h-8 text-sm font-mono" value={form.numero} onChange={e => set('numero', e.target.value)} placeholder="0000000-00.0000.0.00.0000" />
+          {form.numero.trim() && form.numero.replace(/\D/g, '').length !== 20 && (
+            <p className="text-[11px] text-amber-600 mt-1 flex items-start gap-1"><AlertCircle size={11} className="flex-shrink-0 mt-0.5" /> Número fora do padrão CNJ (20 dígitos). Sem CNJ válido, os andamentos <b>não</b> serão capturados automaticamente pelo DataJud.</p>
+          )}
         </div>
         <div className="col-span-2">
           <Label className="text-xs">Cliente *</Label>
-          <Select value={form.clienteId} onValueChange={v => set('clienteId', v)}>
-            <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-            <SelectContent>{state.clientes.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}</SelectContent>
-          </Select>
+          <ClienteCombo value={form.clienteId} onChange={v => set('clienteId', v)} clientes={state.clientes} />
         </div>
         <div>
           <Label className="text-xs">Tribunal *</Label>
-          <Select value={form.tribunal} onValueChange={v => set('tribunal', v)}>
-            <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-            <SelectContent>{TRIBUNAIS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-          </Select>
+          <ComboBox value={form.tribunal} onChange={v => { set('tribunal', v); if (/^(trt|tst)/i.test(v.trim())) set('area', 'trabalhista'); }} options={tribunalOpts} placeholder="Selecione ou digite..." />
         </div>
         <div>
           <Label className="text-xs">Comarca</Label>
-          <Input className="mt-1 h-8 text-sm" value={form.comarca} onChange={e => set('comarca', e.target.value)} />
+          <ComboBox value={form.comarca} onChange={v => set('comarca', v)} options={comarcaOpts} placeholder="Selecione ou digite..." />
         </div>
-        <div className="col-span-2">
+        <div>
+          <Label className="text-xs">Estado (UF)</Label>
+          <ComboBox value={form.uf || ''} onChange={v => set('uf', v)} options={ufOpts} placeholder="UF..." />
+        </div>
+        <div>
           <Label className="text-xs">Vara / Juízo</Label>
           <Input className="mt-1 h-8 text-sm" value={form.vara} onChange={e => set('vara', e.target.value)} />
         </div>
@@ -916,8 +1069,13 @@ function ProcessoForm({ initial, onSave, onCancel }: {
           <Input className="mt-1 h-8 text-sm" type="number" value={form.valorCausa || ''} onChange={e => set('valorCausa', e.target.value ? Number(e.target.value) : undefined)} />
         </div>
         <div className="col-span-2">
-          <Label className="text-xs">Observações</Label>
-          <Textarea className="mt-1 text-sm" rows={2} value={form.observacoes || ''} onChange={e => set('observacoes', e.target.value)} />
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Observações</Label>
+            <Button type="button" size="sm" variant="outline" className="h-6 text-[10px] text-blue-700 border-blue-200 hover:bg-blue-50" onClick={gerarResumoIA} disabled={resumindo}>
+              {resumindo ? <Loader2 size={11} className="animate-spin mr-1" /> : <Brain size={11} className="mr-1" />} Resumo do caso com IA
+            </Button>
+          </div>
+          <Textarea className="mt-1 text-sm" rows={3} value={form.observacoes || ''} onChange={e => set('observacoes', e.target.value)} />
         </div>
       </div>
       <DialogFooter>
@@ -942,54 +1100,160 @@ function UpdateFormHook({ form: _f, setForm, setPendingMovs }: { form: any; setF
 
 // ─── Detalhe Processo ────────────────────────────────────────────────────────
 
-function ProcessoDetalhe({ processo, onClose: _onClose }: { processo: Processo; onClose: () => void }) {
-  const { state, dispatch } = useApp();
+const TIPOS_PRAZO_DET: TipoPrazo[] = ['prazo_fatal', 'audiência', 'prazo_dilatório', 'diligência', 'reunião', 'outro'];
+
+// Diálogo COMPLETO do processo (todas as abas: Informações, Andamentos, Prazos/agendamento,
+// Petições, Documentos + Editar/Arquivar). Reutilizável em qualquer tela (Agenda, Publicações…).
+export function ProcessoDetalheDialog({ processo, onClose }: { processo: Processo | null; onClose: () => void }) {
+  return (
+    <Dialog open={!!processo} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-5xl w-[95vw]">
+        <DialogHeader><DialogTitle className="text-[#1e3a5f]">Detalhes do Processo</DialogTitle></DialogHeader>
+        {processo && <ProcessoDetalhe processo={processo} onClose={onClose} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo: Processo; onClose?: () => void }) {
+  const { state, dispatch, usuario, reload } = useApp();
+  // sempre "vivo": reflete edições/andamentos/prazos na hora
+  const processo = state.processos.find(p => p.id === processoProp.id) || processoProp;
   const [novaMovTab, setNovaMovTab] = useState(false);
-  const [novaMov, setNovaMov] = useState({ data: '', tipo: '', descricao: '' });
+  const [novaMov, setNovaMov] = useState({ data: '', tipo: '', descricao: '', valor: '' });
   const [buscandoMov, setBuscandoMov] = useState(false);
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+  const toggleExpandido = (id: string) => setExpandidos(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const [editMovId, setEditMovId] = useState<string | null>(null);
+  const iniciarEditMov = (m: Movimentacao) => {
+    setNovaMov({ data: m.data || '', tipo: m.tipo || '', descricao: m.descricao || '', valor: (m.valor || m.valor === 0) ? String(m.valor) : '' });
+    setEditMovId(m.id);
+    setNovaMovTab(true);
+  };
+  // Arquiva/restaura o processo direto do detalhe (arquivar = tirar da lista ativa, sem apagar).
+  const arquivarProc = () => {
+    const arq = !processo.arquivado;
+    dispatch({ type: 'UPDATE_PROCESSO', payload: { ...processo, arquivado: arq } });
+    toast.success(arq ? 'Processo arquivado — fica em "Arquivados" e pode ser restaurado.' : 'Processo restaurado.');
+    onClose?.();
+  };
+  const [editando, setEditando] = useState(false);
+  const [novoPrazoTab, setNovoPrazoTab] = useState(false);
+  const [novoPrazo, setNovoPrazo] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
   const cliente = state.clientes.find(c => c.id === processo.clienteId);
   const prazosProc = state.prazos.filter(p => p.processoId === processo.id);
   const peticoesProc = state.peticoes.filter(p => p.processoId === processo.id);
+  // Publicações do DJEN vinculadas ao processo — trazem a ÍNTEGRA de despachos/decisões
+  // (o DataJud só dá o nome do movimento). Mescladas na linha do tempo dos andamentos.
+  const pubsProc = state.publicacoes.filter(p => p.processoId === processo.id);
+
+  const salvarEdicao = (data: Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>) => {
+    dispatch({ type: 'UPDATE_PROCESSO', payload: { ...processo, ...data } });
+    setEditando(false);
+    toast.success('Dados do processo atualizados!');
+  };
+
+  const addPrazo = () => {
+    if (!novoPrazo.descricao.trim() || !novoPrazo.dataHora) { toast.error('Preencha a tarefa e a data/hora.'); return; }
+    dispatch({
+      type: 'ADD_PRAZO',
+      payload: {
+        id: genId(), processoId: processo.id, tipo: novoPrazo.tipo, descricao: novoPrazo.descricao.trim(),
+        dataHora: novoPrazo.dataHora, diasUteis: true, responsavel: novoPrazo.responsavel,
+        status: 'pendente', alertaDias: 3, agendadoPor: '', criadoEm: new Date().toISOString(),
+      } as Prazo,
+    });
+    setNovoPrazo({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
+    setNovoPrazoTab(false);
+    toast.success('Prazo agendado!');
+  };
+  const [imgUrl, setImgUrl] = useState('');
+  useEffect(() => {
+    let ativo = true;
+    if (processo.imagemPath) db.signedUrlProcessoImagem(processo.imagemPath).then(u => { if (ativo) setImgUrl(u); });
+    else setImgUrl('');
+    return () => { ativo = false; };
+  }, [processo.imagemPath]);
+
+  const [documentos, setDocumentos] = useState<Documento[]>([]);
+  const [subindoDoc, setSubindoDoc] = useState(false);
+  const carregarDocs = () => { db.listarDocumentos(processo.id).then(setDocumentos); };
+  useEffect(() => { db.listarDocumentos(processo.id).then(setDocumentos); }, [processo.id]);
+  const enviarDoc = async (file: File, tipo: string) => {
+    setSubindoDoc(true);
+    const { error } = await db.uploadDocumento(processo.id, file, tipo);
+    if (error) toast.error('Falha ao anexar: ' + (error as { message?: string }).message);
+    else { toast.success('Documento anexado!'); carregarDocs(); logAcao('criar', 'documento', `Anexou documento "${file.name}" ao processo ${processo.numero}`, processo.id); }
+    setSubindoDoc(false);
+  };
+  const baixarDoc = async (d: Documento) => {
+    const url = await db.signedUrlDocumento(d.arquivoPath);
+    if (url) window.open(url, '_blank'); else toast.error('Não foi possível abrir o documento.');
+  };
 
   const addMovimentacao = () => {
     if (!novaMov.data || !novaMov.descricao) { toast.error('Preencha data e descrição.'); return; }
-    const mov: Movimentacao = { id: genId(), ...novaMov };
-    const updated = { ...processo, movimentacoes: [...processo.movimentacoes, mov] };
+    const dados = {
+      data: novaMov.data, tipo: novaMov.tipo, descricao: novaMov.descricao,
+      valor: novaMov.valor ? Number(novaMov.valor) : undefined,
+    };
+    const updated = editMovId
+      ? { ...processo, movimentacoes: processo.movimentacoes.map(m => m.id === editMovId ? { ...m, ...dados } : m) }
+      : { ...processo, movimentacoes: [...processo.movimentacoes, { id: genId(), ...dados }] };
     dispatch({ type: 'UPDATE_PROCESSO', payload: updated });
-    setNovaMov({ data: '', tipo: '', descricao: '' });
+    setNovaMov({ data: '', tipo: '', descricao: '', valor: '' });
     setNovaMovTab(false);
-    toast.success('Movimentação adicionada!');
+    toast.success(editMovId ? 'Andamento atualizado!' : 'Andamento adicionado!');
+    setEditMovId(null);
   };
 
   const sincronizarDataJud = async () => {
     setBuscandoMov(true);
     try {
-      const res = await buscarDataJud(processo.numero);
-      const existentes = new Set(processo.movimentacoes.map(m => m.data + m.descricao));
-      const novas = res.movimentos
-        .filter(m => !existentes.has(m.data + m.nome))
-        .map(m => ({ id: genId(), data: m.data, tipo: 'DataJud', descricao: m.nome }));
-      if (novas.length === 0) {
-        toast.info('Nenhuma movimentação nova encontrada.');
+      // Via servidor (edge function) — o DataJud não permite chamada direta do navegador (sem CORS).
+      const { data, error } = await db.sincronizarProcessoDataJud({ processoId: processo.id, numero: processo.numero });
+      if (error) throw error;
+      if (data?.erro) {
+        toast.error(data.erro);
+      } else if ((data?.novos_andamentos ?? 0) > 0) {
+        toast.success(`${data!.novos_andamentos} movimentação(ões) importada(s) do ${data?.tribunal || 'DataJud'}!`);
+        await reload();
+      } else if (data?.encontrado_no_datajud === false) {
+        toast.info('Processo ainda não indexado no DataJud — nada a importar por enquanto.');
       } else {
-        const updated = { ...processo, movimentacoes: [...processo.movimentacoes, ...novas] };
-        dispatch({ type: 'UPDATE_PROCESSO', payload: updated });
-        toast.success(`${novas.length} movimentação(ões) importada(s) do DataJud!`);
+        toast.info('Nenhuma movimentação nova encontrada.');
       }
     } catch (e: any) {
-      toast.error(e.message || 'Erro ao consultar DataJud.');
+      toast.error(e?.message || 'Erro ao consultar o DataJud.');
     }
     setBuscandoMov(false);
   };
 
   return (
-    <div className="max-h-[75vh] overflow-y-auto pr-1">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <p className="font-mono text-sm font-bold text-[#1e3a5f]">{processo.numero}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{cliente?.nome} · {processo.tribunal} · {processo.comarca}</p>
+    <div className="max-h-[82vh] overflow-y-auto pr-1">
+      <div className="flex items-start justify-between mb-4 gap-2">
+        <div className="min-w-0">
+          <p className="font-mono text-sm font-bold text-[#1e3a5f] truncate">{processo.numero}</p>
+          <p className="text-xs text-gray-500 mt-0.5 truncate">{processo.tribunal}{processo.comarca ? ` · ${processo.comarca}` : ''}{processo.uf ? `/${processo.uf}` : ''}</p>
+          <p className="text-sm text-gray-800 mt-1 break-words">
+            <span className="font-medium">{cliente?.nome || '—'}</span>
+            <span className="text-gray-400"> × </span>
+            <span className="font-medium">{processo.parteContraria || 'parte adversa não informada'}</span>
+            {processo.polo ? <span className="text-[11px] text-gray-400"> · nosso cliente no polo {processo.polo}</span> : null}
+          </p>
         </div>
-        <Badge className={`${statusColor[processo.status]} capitalize text-xs`}>{processo.status}</Badge>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {processo.arquivado && <Badge className="bg-slate-200 text-slate-600 text-[10px]">Arquivado</Badge>}
+          <Badge className={`${statusColor[processo.status]} capitalize text-xs`}>{processo.status}</Badge>
+          {usuario.podeEditar && (
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditando(true)}><Edit size={12} className="mr-1" />Editar</Button>
+          )}
+          {usuario.podeEditar && (
+            processo.arquivado
+              ? <Button size="sm" variant="outline" className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50" onClick={arquivarProc}><ArchiveRestore size={12} className="mr-1" />Restaurar</Button>
+              : <Button size="sm" variant="outline" className="h-7 text-xs text-slate-600" onClick={arquivarProc}><Archive size={12} className="mr-1" />Arquivar</Button>
+          )}
+        </div>
       </div>
       <Tabs defaultValue="info">
         <TabsList className="text-xs h-8">
@@ -997,61 +1261,180 @@ function ProcessoDetalhe({ processo, onClose: _onClose }: { processo: Processo; 
           <TabsTrigger value="movimentos" className="text-xs">Andamentos ({processo.movimentacoes.length})</TabsTrigger>
           <TabsTrigger value="prazos" className="text-xs">Prazos ({prazosProc.length})</TabsTrigger>
           <TabsTrigger value="peticoes" className="text-xs">Petições ({peticoesProc.length})</TabsTrigger>
+          <TabsTrigger value="documentos" className="text-xs">Documentos ({documentos.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="info" className="mt-3">
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            {[
-              ['Vara/Juízo', processo.vara],
-              ['Área', processo.area],
-              ['Fase', processo.fase],
-              ['Cliente é', processo.polo],
-              ['Parte Contrária', processo.parteContraria],
-              ['Objeto', processo.objeto],
-              ['Advogado', processo.advogadoResponsavel],
-              ['Distribuição', processo.dataDistribuicao],
-              ['Valor da Causa', processo.valorCausa ? `R$ ${processo.valorCausa.toLocaleString('pt-BR')}` : '—'],
-            ].map(([k, v]) => (
-              <div key={k} className="bg-gray-50 rounded p-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+            {([
+              ['Cliente', cliente?.nome, false],
+              ['Número (CNJ)', processo.numero, false],
+              ['Tribunal', processo.tribunal, false],
+              ['Comarca', processo.comarca, false],
+              ['Estado (UF)', processo.uf, false],
+              ['Vara / Juízo', processo.vara, false],
+              ['Área', processo.area, true],
+              ['Fase', processo.fase, true],
+              ['Situação', processo.status, true],
+              ['Cliente é (polo)', processo.polo, true],
+              ['Parte Contrária', processo.parteContraria, false],
+              ['Advogado', processo.advogadoResponsavel, false],
+              ['Data de Distribuição', fmtDataBR(processo.dataDistribuicao), false],
+              ['Valor da Causa', (processo.valorCausa || processo.valorCausa === 0) ? `R$ ${processo.valorCausa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—', false],
+            ] as [string, string | undefined, boolean][]).map(([k, v, cap]) => (
+              <div key={k} className="bg-gray-50 rounded p-2 min-w-0">
                 <p className="text-gray-400 text-[10px] uppercase">{k}</p>
-                <p className="font-medium capitalize mt-0.5">{v || '—'}</p>
+                <p className={`font-medium mt-0.5 break-words ${cap ? 'capitalize' : ''}`}>{v || '—'}</p>
               </div>
             ))}
           </div>
-          {processo.observacoes && <div className="mt-3 bg-yellow-50 border border-yellow-100 rounded p-2 text-xs text-gray-600">{processo.observacoes}</div>}
-        </TabsContent>
-        <TabsContent value="movimentos" className="mt-3 space-y-2">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-gray-500">{processo.movimentacoes.length} movimentações</p>
-            <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200" onClick={sincronizarDataJud} disabled={buscandoMov}>
-              {buscandoMov ? <Loader2 size={11} className="animate-spin mr-1" /> : <Wifi size={11} className="mr-1" />}
-              Sincronizar DataJud
-            </Button>
+          <div className="mt-2 bg-blue-50/60 border border-blue-100 rounded p-2.5 text-xs">
+            <p className="text-gray-400 text-[10px] uppercase">Objeto — o que é a ação</p>
+            <p className="font-medium mt-0.5 break-words">{processo.objeto || '—'}</p>
           </div>
-          {[...processo.movimentacoes].sort((a,b) => b.data.localeCompare(a.data)).map(m => (
-            <div key={m.id} className="flex gap-3 text-xs">
-              <div className="w-20 flex-shrink-0 text-gray-400">{m.data}</div>
-              <div>{m.tipo && <span className="font-semibold text-[#2563eb]">{m.tipo}: </span>}<span className="text-gray-700">{m.descricao}</span></div>
+          {processo.observacoes && <div className="mt-2 bg-yellow-50 border border-yellow-100 rounded p-2 text-xs text-gray-600 whitespace-pre-wrap">{processo.observacoes}</div>}
+          {processo.imagemPath && (
+            <div className="mt-3">
+              <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1 flex items-center gap-1">
+                <ImageIcon size={11} /> Print anexado{processo.imagemNome ? ` · ${processo.imagemNome}` : ''}
+              </p>
+              {imgUrl
+                ? <a href={imgUrl} target="_blank" rel="noreferrer"><img src={imgUrl} alt="print do processo" className="max-h-72 rounded border shadow-sm hover:opacity-90 transition-opacity" /></a>
+                : <p className="text-xs text-gray-400">Carregando imagem…</p>}
             </div>
-          ))}
-          {novaMovTab ? (
-            <div className="border rounded p-3 space-y-2 mt-3 bg-blue-50">
-              <div className="grid grid-cols-2 gap-2">
-                <div><Label className="text-xs">Data</Label><Input type="date" className="mt-1 h-7 text-xs" value={novaMov.data} onChange={e => setNovaMov(m => ({...m, data: e.target.value}))} /></div>
-                <div><Label className="text-xs">Tipo</Label><Input className="mt-1 h-7 text-xs" placeholder="Ex: Despacho" value={novaMov.tipo} onChange={e => setNovaMov(m => ({...m, tipo: e.target.value}))} /></div>
-              </div>
-              <div><Label className="text-xs">Descrição</Label><Textarea className="mt-1 text-xs" rows={2} value={novaMov.descricao} onChange={e => setNovaMov(m => ({...m, descricao: e.target.value}))} /></div>
-              <div className="flex gap-2"><Button size="sm" className="h-7 text-xs bg-[#2563eb]" onClick={addMovimentacao}>Adicionar</Button><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setNovaMovTab(false)}>Cancelar</Button></div>
-            </div>
-          ) : (
-            <Button size="sm" variant="outline" className="h-7 text-xs mt-2" onClick={() => setNovaMovTab(true)}><Plus size={12} className="mr-1" />Novo Andamento</Button>
           )}
         </TabsContent>
-        <TabsContent value="prazos" className="mt-3 space-y-2">
-          {prazosProc.length === 0 ? <p className="text-xs text-gray-400">Nenhum prazo vinculado.</p> : prazosProc.map(pr => (
-            <div key={pr.id} className="flex items-center justify-between border rounded p-2 text-xs">
-              <div><p className="font-medium">{pr.descricao}</p><p className="text-gray-400">{pr.dataHora.split('T')[0]} · {pr.responsavel.split(' ')[0]}</p></div>
-              <Badge variant="outline" className="capitalize text-[10px]">{pr.status}</Badge>
+        <TabsContent value="movimentos" className="mt-3 space-y-2">
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <p className="text-xs text-gray-500">
+              {processo.movimentacoes.length} andamento(s)
+              {pubsProc.length > 0 && <> · <span className="text-indigo-600 font-medium">{pubsProc.length} despacho(s)/decisão(ões) com íntegra</span></>}
+              {(() => { const tot = processo.movimentacoes.reduce((s, m) => s + (m.valor || 0), 0); return tot > 0 ? <> · <span className="text-green-700 font-medium">valores: R$ {tot.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></> : null; })()}
+            </p>
+            {usuario.podeEditar && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button size="sm" className="h-7 text-xs bg-[#2563eb] hover:bg-[#1e40af]" onClick={() => { setEditMovId(null); setNovaMov({ data: '', tipo: '', descricao: '', valor: '' }); setNovaMovTab(v => !v); }}>
+                  <Plus size={12} className="mr-1" />Novo Andamento
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200" onClick={sincronizarDataJud} disabled={buscandoMov}>
+                  {buscandoMov ? <Loader2 size={11} className="animate-spin mr-1" /> : <Wifi size={11} className="mr-1" />}
+                  Sincronizar DataJud
+                </Button>
+              </div>
+            )}
+          </div>
+          {usuario.podeEditar && novaMovTab && (
+            <div className="border rounded p-3 space-y-2 mb-3 bg-blue-50">
+              <p className="text-xs font-semibold text-[#1e3a5f]">{editMovId ? 'Editar andamento' : 'Novo andamento'}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label className="text-xs">Data</Label><Input type="date" className="mt-1 h-7 text-xs" value={novaMov.data} onChange={e => setNovaMov(m => ({...m, data: e.target.value}))} /></div>
+                <div>
+                  <Label className="text-xs">Tipo do andamento</Label>
+                  <Input list="dl-andamento" className="mt-1 h-7 text-xs" placeholder="Observação, Acordo, Suspenso…" value={novaMov.tipo} onChange={e => setNovaMov(m => ({...m, tipo: e.target.value}))} />
+                  <datalist id="dl-andamento">{TIPOS_ANDAMENTO.map(t => <option key={t} value={t} />)}</datalist>
+                </div>
+              </div>
+              <div><Label className="text-xs">Descrição</Label><Textarea className="mt-1 text-xs" rows={2} value={novaMov.descricao} onChange={e => setNovaMov(m => ({...m, descricao: e.target.value}))} /></div>
+              <div>
+                <Label className="text-xs">Valor <span className="text-gray-400">(R$ — opcional, ex.: cumprimento de sentença, depósito, custas)</span></Label>
+                <Input type="number" step="0.01" min="0" className="mt-1 h-7 text-xs" placeholder="0,00" value={novaMov.valor} onChange={e => setNovaMov(m => ({...m, valor: e.target.value}))} />
+              </div>
+              <div className="flex gap-2"><Button size="sm" className="h-7 text-xs bg-[#2563eb]" onClick={addMovimentacao}>{editMovId ? 'Salvar' : 'Adicionar'}</Button><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setNovaMovTab(false); setEditMovId(null); }}>Cancelar</Button></div>
             </div>
+          )}
+          {(() => {
+            type TL = { key: string; data: string; kind: 'mov' | 'pub'; movId?: string; tipo?: string; descricao?: string; valor?: number; conteudo?: string; orgao?: string; link?: string };
+            const itens: TL[] = [
+              ...processo.movimentacoes.map(m => ({ key: 'm' + m.id, data: m.data || '', kind: 'mov' as const, movId: m.id, tipo: m.tipo, descricao: m.descricao, valor: m.valor })),
+              ...pubsProc.map(p => ({ key: 'p' + p.id, data: p.data || '', kind: 'pub' as const, tipo: p.tipo, conteudo: p.conteudo, orgao: p.orgao, link: p.link })),
+            ].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+            if (itens.length === 0) return <p className="text-xs text-gray-400">Nenhum andamento ainda. Use "Novo Andamento" ou "Sincronizar DataJud".</p>;
+            return itens.map(it => it.kind === 'mov' ? (
+              <div key={it.key} className="flex gap-3 text-xs border-b border-gray-100 pb-1.5">
+                <div className="w-24 flex-shrink-0 text-gray-400 font-mono">{fmtDataBR(it.data)}</div>
+                <div className="min-w-0 flex-1">
+                  {it.tipo && <span className="font-semibold text-[#2563eb]">{it.tipo}: </span>}
+                  <span className="text-gray-700 break-words">{it.descricao}</span>
+                  {(it.valor || it.valor === 0) && (
+                    <span className="ml-1.5 inline-block bg-green-100 text-green-700 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">R$ {it.valor!.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  )}
+                </div>
+                {usuario.podeEditar && it.movId && (
+                  <button title="Editar andamento" className="flex-shrink-0 text-gray-300 hover:text-[#2563eb] transition-colors" onClick={() => { const m = processo.movimentacoes.find(x => x.id === it.movId); if (m) iniciarEditMov(m); }}><Edit size={12} /></button>
+                )}
+              </div>
+            ) : (
+              <div key={it.key} className="flex gap-3 text-xs border-b border-gray-100 pb-2">
+                <div className="w-24 flex-shrink-0 text-gray-400 font-mono">{fmtDataBR(it.data)}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5"><FileText size={9} className="mr-0.5" />Publicação{it.tipo ? ` · ${it.tipo}` : ''}</Badge>
+                    {it.orgao && <span className="text-gray-400 text-[11px]">{it.orgao}</span>}
+                  </div>
+                  <div className={`mt-1 text-gray-700 whitespace-pre-wrap break-words bg-indigo-50/50 border border-indigo-100 rounded p-2 ${expandidos.has(it.key) ? '' : 'max-h-20 overflow-hidden'}`}>
+                    {it.conteudo || '—'}
+                  </div>
+                  <div className="mt-1 flex items-center gap-3">
+                    {(it.conteudo || '').length > 160 && (
+                      <button onClick={() => toggleExpandido(it.key)} className="text-[11px] text-indigo-600 hover:underline font-medium">
+                        {expandidos.has(it.key) ? 'Recolher' : 'Ver íntegra'}
+                      </button>
+                    )}
+                    {it.link && <a href={it.link} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline">Abrir no tribunal</a>}
+                  </div>
+                </div>
+              </div>
+            ));
+          })()}
+        </TabsContent>
+        <TabsContent value="prazos" className="mt-3 space-y-2">
+          {prazosProc.length === 0 && <p className="text-xs text-gray-400">Nenhum prazo vinculado.</p>}
+          {prazosProc.map(pr => {
+            const concluido = pr.status === 'cumprido' || pr.status === 'cancelado';
+            const [dt, hr] = pr.dataHora.split('T');
+            return (
+            <div key={pr.id} className="flex items-center justify-between border rounded p-2 text-xs gap-2">
+              <div className="min-w-0">
+                <p className={`font-medium break-words ${concluido ? 'line-through text-gray-400' : ''}`}>{pr.descricao}</p>
+                <p className="text-gray-400">{fmtDataBR(dt)}{hr && hr !== '23:59' ? ` ${hr.slice(0,5)}` : ''}{pr.responsavel ? ` · ${pr.responsavel.split(' ')[0]}` : ''} · <span className="capitalize">{pr.tipo.replace('_', ' ')}</span></p>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Badge variant="outline" className="capitalize text-[10px]">{pr.status}</Badge>
+                {usuario.podeEditar && (concluido ? (
+                  <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2 text-blue-600 hover:text-blue-700" onClick={() => dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'pendente', aprovadoEm: undefined, aprovadoPor: undefined, cumpridoDeclaradoEm: undefined, cumpridoDeclaradoPor: undefined } })}>Reabrir</Button>
+                ) : (
+                  <>
+                    <Button size="sm" className="h-7 text-[10px] px-2 bg-green-600 hover:bg-green-700" onClick={() => { dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'cumprido', aprovadoEm: new Date().toISOString(), aprovadoPor: usuario.nome } }); toast.success('Prazo concluído (baixado).'); }}>Concluir</Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-400 hover:text-red-500" title="Cancelar prazo" onClick={() => { dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'cancelado' } }); toast.info('Prazo cancelado.'); }}><X size={13} /></Button>
+                  </>
+                ))}
+              </div>
+            </div>
+            );
+          })}
+          {usuario.podeEditar && (novoPrazoTab ? (
+            <div className="border rounded p-3 space-y-2 mt-2 bg-blue-50">
+              <div><Label className="text-xs">Tarefa / descrição do prazo</Label><Input className="mt-1 h-7 text-xs" placeholder="Ex: Apresentar contestação" value={novoPrazo.descricao} onChange={e => setNovoPrazo(p => ({ ...p, descricao: e.target.value }))} /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label className="text-xs">Data e hora</Label><Input type="datetime-local" step="300" className="mt-1 h-7 text-xs" value={novoPrazo.dataHora} onChange={e => setNovoPrazo(p => ({ ...p, dataHora: e.target.value }))} /></div>
+                <div>
+                  <Label className="text-xs">Tipo</Label>
+                  <Select value={novoPrazo.tipo} onValueChange={v => setNovoPrazo(p => ({ ...p, tipo: v as TipoPrazo }))}>
+                    <SelectTrigger className="mt-1 h-7 text-xs capitalize"><SelectValue /></SelectTrigger>
+                    <SelectContent>{TIPOS_PRAZO_DET.map(t => <SelectItem key={t} value={t} className="capitalize">{t.replace('_', ' ')}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Responsável</Label>
+                <Select value={novoPrazo.responsavel} onValueChange={v => setNovoPrazo(p => ({ ...p, responsavel: v }))}>
+                  <SelectTrigger className="mt-1 h-7 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2"><Button size="sm" className="h-7 text-xs bg-[#2563eb]" onClick={addPrazo}>Agendar</Button><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setNovoPrazoTab(false)}>Cancelar</Button></div>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" className="h-7 text-xs mt-2" onClick={() => setNovoPrazoTab(true)}><Clock size={12} className="mr-1" />Agendar prazo</Button>
           ))}
         </TabsContent>
         <TabsContent value="peticoes" className="mt-3 space-y-2">
@@ -1062,7 +1445,51 @@ function ProcessoDetalhe({ processo, onClose: _onClose }: { processo: Processo; 
             </div>
           ))}
         </TabsContent>
+        <TabsContent value="documentos" className="mt-3 space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-gray-500">{documentos.length} documento(s) anexado(s)</p>
+            {usuario.podeEditar && (
+              <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
+                {subindoDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar documento
+                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.jpg,.jpeg,.png" disabled={subindoDoc} onChange={e => { const f = e.target.files?.[0]; if (f) enviarDoc(f, 'documento'); e.target.value = ''; }} />
+              </label>
+            )}
+          </div>
+          {documentos.length === 0 && <p className="text-xs text-gray-400">Nenhum documento anexado. Use "Anexar" para guardar defesas, contratos, provas, comprovantes — ficam salvos para consulta futura.</p>}
+          {documentos.map(d => (
+            <div key={d.id} className="flex items-center justify-between border rounded p-2 text-xs gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText size={14} className="text-gray-500 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{d.nome}</p>
+                  <p className="text-gray-400 truncate">{d.arquivoNome}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <Badge variant="outline" className="text-[10px] capitalize">{d.tipo}</Badge>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700" title="Baixar / abrir" onClick={() => baixarDoc(d)}><Download size={13} /></Button>
+                {usuario.podeEditar && (
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400 hover:text-red-500" title="Remover" onClick={async () => { await db.deleteDocumento(d.id); carregarDocs(); toast.success('Documento removido.'); logAcao('excluir', 'documento', `Removeu documento "${d.nome}" do processo ${processo.numero}`, processo.id); }}><X size={13} /></Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </TabsContent>
       </Tabs>
+
+      {/* Editar dados do processo */}
+      <Dialog open={editando} onOpenChange={setEditando}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle className="text-[#1e3a5f]">Editar Processo</DialogTitle></DialogHeader>
+          {editando && (
+            <ProcessoForm
+              initial={{ numero: processo.numero, clienteId: processo.clienteId, vara: processo.vara, tribunal: processo.tribunal, comarca: processo.comarca, area: processo.area, fase: processo.fase, parteContraria: processo.parteContraria, advogadoResponsavel: processo.advogadoResponsavel, valorCausa: processo.valorCausa, dataDistribuicao: processo.dataDistribuicao, status: processo.status, polo: processo.polo, objeto: processo.objeto, observacoes: processo.observacoes }}
+              onSave={salvarEdicao}
+              onCancel={() => setEditando(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1370,8 +1797,53 @@ function DialogImportarLote({ onClose }: { onClose: () => void }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
+function fmtDataBR(d?: string): string {
+  if (!d) return '';
+  const [a, m, dia] = d.split('T')[0].split('-');
+  return dia && m && a ? `${dia}/${m}/${a}` : d;
+}
+
+// Diálogo para o usuário concordar em inativar o processo após um alerta de arquivamento/baixa.
+function DialogConcordarArquivamento({ proc, onConfirm, onCancel }: {
+  proc: Processo;
+  onConfirm: (situacao: StatusProcesso, obs: string) => void;
+  onCancel: () => void;
+}) {
+  const [situacao, setSituacao] = useState<StatusProcesso>('arquivado');
+  const [obs, setObs] = useState('');
+  const INATIVAR: StatusProcesso[] = ['arquivado', 'ganho', 'perdido', 'acordo'];
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onCancel(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertCircle size={16} className="text-amber-600" /> Inativar processo</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-gray-600">
+            Processo <span className="font-mono font-semibold">{proc.numero}</span>. Foi detectado um <b>arquivamento/baixa</b>
+            {proc.alertaArquivamento?.trecho ? <> em {proc.alertaArquivamento.fonte === 'publicacao' ? 'publicação' : 'andamento'}: <span className="italic">“{proc.alertaArquivamento.trecho}”</span></> : '.'}
+          </p>
+          <div>
+            <Label className="text-xs">Nova situação</Label>
+            <Select value={situacao} onValueChange={v => setSituacao(v as StatusProcesso)}>
+              <SelectTrigger className="mt-1 h-8 text-sm capitalize"><SelectValue /></SelectTrigger>
+              <SelectContent>{INATIVAR.map(s => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Observação (opcional)</Label>
+            <Textarea className="mt-1 text-sm" rows={3} placeholder="Ex.: baixado após acordo cumprido; verificado no sistema do tribunal..." value={obs} onChange={e => setObs(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onCancel}>Cancelar</Button>
+          <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => onConfirm(situacao, obs)}>Confirmar inativação</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Processos() {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, usuario } = useApp();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterArea, setFilterArea] = useState<string>('todas');
@@ -1384,18 +1856,100 @@ export default function Processos() {
   const [viewProcesso, setViewProcesso] = useState<Processo | null>(null);
   const [arquivarId, setArquivarId] = useState<string | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
+  const [soAlerta, setSoAlerta] = useState(false);
+  const [soNovos, setSoNovos] = useState(false);
+  const [alertaConcordar, setAlertaConcordar] = useState<Processo | null>(null);
   // prefill from DataJud — stored here, passed to form via key remount
   const [prefill, setPrefill] = useState<(Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'> & { movimentacoes?: Movimentacao[] }) | null>(null);
   const [formKey, setFormKey] = useState(0);
+  // print pendente (extraído por imagem) a ser salvo no Storage ao cadastrar
+  const [pendingImage, setPendingImage] = useState<{ base64: string; mime: string; nome: string } | null>(null);
 
   const arquivadosCount = state.processos.filter(p => p.arquivado).length;
+  const procById = useMemo(() => new Map(state.processos.map(p => [p.id, p])), [state.processos]);
+
+  const confirmarOrigem = (proc: Processo) => {
+    if (!proc.sugestaoOrigemId) return;
+    dispatch({ type: 'UPDATE_PROCESSO', payload: { ...proc, processoOrigemId: proc.sugestaoOrigemId, sugestaoOrigemId: undefined } });
+    const org = procById.get(proc.sugestaoOrigemId);
+    toast.success(`Vinculado ao processo de origem ${org?.numero || ''}.`);
+  };
+  const descartarSugestao = (proc: Processo) => {
+    dispatch({ type: 'UPDATE_PROCESSO', payload: { ...proc, sugestaoOrigemId: undefined } });
+    toast.info('Sugestão de vínculo descartada.');
+  };
+
+  const alertaCount = state.processos.filter(p => p.alertaArquivamento?.ativo && !p.arquivado && usuario.emArea(p.area)).length;
+  const novosCount = state.processos.filter(p => p.alertaNovo && !p.arquivado && usuario.emArea(p.area)).length;
+
+  const marcarRevisado = (proc: Processo) => {
+    dispatch({ type: 'UPDATE_PROCESSO', payload: { ...proc, alertaNovo: false } });
+    db.marcarProcessoRevisado(proc.id).then(({ error }) => {
+      if (error) toast.error('Não foi possível salvar a revisão (verifique a conexão).');
+    });
+  };
+  const marcarTodosRevisados = () => {
+    const novos = state.processos.filter(p => p.alertaNovo && !p.arquivado && usuario.emArea(p.area));
+    novos.forEach(marcarRevisado);
+    if (novos.length) toast.success(`${novos.length} processo(s) marcados como revisados.`);
+    setSoNovos(false);
+  };
+
+  const salvarAlerta = (proc: Processo, alerta: NonNullable<Processo['alertaArquivamento']>, extra?: Partial<Processo>) => {
+    dispatch({ type: 'UPDATE_PROCESSO', payload: { ...proc, ...extra, alertaArquivamento: alerta } });
+    db.resolverAlertaArquivamento(proc.id, alerta).then(({ error }) => {
+      if (error) toast.error('Não foi possível salvar a decisão do alerta (verifique a conexão).');
+    });
+  };
+  const ignorarAlerta = (proc: Processo) => {
+    salvarAlerta(proc, { ...(proc.alertaArquivamento || { ativo: true }), ativo: false, decisao: 'ignorado', resolvidoEm: new Date().toISOString() });
+    toast.info('Alerta ignorado — o processo segue ativo.');
+  };
+  // Fecha TODOS os alertas de arquivamento da lista de uma vez, sem arquivar os processos.
+  const fecharTodosAlertas = () => {
+    const alvos = state.processos.filter(p => p.alertaArquivamento?.ativo && !p.arquivado && usuario.emArea(p.area));
+    alvos.forEach(p => salvarAlerta(p, { ...(p.alertaArquivamento || { ativo: true }), ativo: false, decisao: 'ignorado', resolvidoEm: new Date().toISOString() }));
+    if (alvos.length) toast.success(`${alvos.length} alerta(s) fechado(s) — os processos seguem ativos (nada foi arquivado).`);
+    setSoAlerta(false);
+  };
+  // "Fechar" o processo das listas de atenção (alerta de arquivamento e/ou novo capturado)
+  // SEM arquivar — só tira a urgência/pendência da lista. O processo continua ativo.
+  const dispensarDosAlertas = (proc: Processo) => {
+    const temAlerta = !!proc.alertaArquivamento?.ativo;
+    const temNovo = !!proc.alertaNovo;
+    if (!temAlerta && !temNovo) return;
+    if (temAlerta) {
+      salvarAlerta(proc, { ...(proc.alertaArquivamento || { ativo: true }), ativo: false, decisao: 'ignorado', resolvidoEm: new Date().toISOString() }, temNovo ? { alertaNovo: false } : undefined);
+      if (temNovo) db.marcarProcessoRevisado(proc.id).then(({ error }) => { if (error) toast.error('Não foi possível salvar (verifique a conexão).'); });
+    } else {
+      marcarRevisado(proc);
+    }
+    toast.success('Processo retirado das listas de alerta/novos (segue ativo — não foi arquivado).');
+  };
+  const concordarArquivamento = (proc: Processo, situacao: StatusProcesso, obs: string) => {
+    const texto = obs.trim();
+    const novaObs = texto
+      ? `${proc.observacoes ? proc.observacoes + '\n' : ''}[${new Date().toLocaleDateString('pt-BR')}] Inativado (alerta de arquivamento): ${texto}`
+      : proc.observacoes;
+    salvarAlerta(
+      proc,
+      { ...(proc.alertaArquivamento || { ativo: true }), ativo: false, decisao: 'arquivado', obs: texto || undefined, resolvidoEm: new Date().toISOString() },
+      { status: situacao, observacoes: novaObs },
+    );
+    setAlertaConcordar(null);
+    toast.success(`Processo marcado como ${situacao}.`);
+  };
 
   const filtered = state.processos.filter(p => {
     if (mostrarArquivados ? !p.arquivado : !!p.arquivado) return false;
+    if (!usuario.emArea(p.area)) return false;
+    if (soAlerta && !p.alertaArquivamento?.ativo) return false;
+    if (soNovos && !p.alertaNovo) return false;
     const cliente = state.clientes.find(c => c.id === p.clienteId);
-    const matchSearch = p.numero.includes(search) ||
-      cliente?.nome.toLowerCase().includes(search.toLowerCase()) ||
-      p.parteContraria.toLowerCase().includes(search.toLowerCase());
+    const s = search.toLowerCase();
+    const matchSearch = (p.numero || '').toLowerCase().includes(s) ||
+      (cliente?.nome || '').toLowerCase().includes(s) ||
+      (p.parteContraria || '').toLowerCase().includes(s);
     const matchStatus = filterStatus === 'todos' || p.status === filterStatus;
     const matchArea = filterArea === 'todas' || p.area === filterArea;
     const matchTribunal = filterTribunal === 'todos' || p.tribunal === filterTribunal;
@@ -1413,33 +1967,66 @@ export default function Processos() {
     toast.success('Processo restaurado.');
   };
 
-  const handleSave = (data: Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>, movs?: Movimentacao[]) => {
+  const handleSave = async (data: Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>, movs?: Movimentacao[]) => {
     if (editProcesso) {
       dispatch({ type: 'UPDATE_PROCESSO', payload: { ...editProcesso, ...data } });
       toast.success('Processo atualizado!');
-    } else {
-      dispatch({
-        type: 'ADD_PROCESSO',
-        payload: { ...data, id: genId(), movimentacoes: movs || [], criadoEm: new Date().toISOString().split('T')[0] },
-      });
-      toast.success('Processo cadastrado!');
+      setDialogOpen(false); setEditProcesso(null); setPrefill(null); setPendingImage(null);
+      return;
     }
-    setDialogOpen(false);
-    setEditProcesso(null);
-    setPrefill(null);
+
+    // Evita duplicar: se já existe processo com o mesmo número, anexa o print a ele
+    const numeroLimpo = (data.numero || '').replace(/\D/g, '');
+    const existente = numeroLimpo
+      ? state.processos.find(p => p.numero.replace(/\D/g, '') === numeroLimpo)
+      : undefined;
+    if (existente) {
+      if (pendingImage) {
+        const up = await db.uploadProcessoImagem(existente.id, pendingImage.base64, pendingImage.mime, pendingImage.nome);
+        if (up.path) {
+          dispatch({ type: 'UPDATE_PROCESSO', payload: { ...existente, imagemPath: up.path, imagemNome: pendingImage.nome } });
+          toast.success('Processo já cadastrado — print anexado a ele.');
+        } else {
+          toast.error('Não foi possível salvar o print.');
+        }
+      } else {
+        toast.info('Processo já cadastrado — abrindo o existente.');
+      }
+      setDialogOpen(false); setEditProcesso(null); setPrefill(null); setPendingImage(null);
+      setViewProcesso(existente);
+      return;
+    }
+
+    const id = genId();
+    let imagemPath: string | undefined;
+    let imagemNome: string | undefined;
+    let origem = data.origem;
+    if (pendingImage) {
+      const up = await db.uploadProcessoImagem(id, pendingImage.base64, pendingImage.mime, pendingImage.nome);
+      if (up.path) { imagemPath = up.path; imagemNome = pendingImage.nome; origem = 'imagem'; }
+    }
+    dispatch({
+      type: 'ADD_PROCESSO',
+      payload: { ...data, id, origem, imagemPath, imagemNome, movimentacoes: movs || [], criadoEm: new Date().toISOString().split('T')[0] },
+    });
+    toast.success(pendingImage ? 'Processo cadastrado com o print anexado!' : 'Processo cadastrado!');
+    setDialogOpen(false); setEditProcesso(null); setPrefill(null); setPendingImage(null);
   };
 
-  const handleDataJudPrefill = (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[] }) => {
+  const handleDataJudPrefill = (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[]; _image?: { base64: string; mime: string; nome: string } }) => {
+    const { _image, ...rest } = dados;
+    setPendingImage(_image || null);
     const base = emptyProcesso();
-    setPrefill({ ...base, ...dados });
+    setPrefill({ ...base, ...rest });
     setEditProcesso(null);
     setFormKey(k => k + 1);
     setDatajudOpen(false);
     setDialogOpen(true);
-    toast.success('Formulário pré-preenchido com dados do DataJud!');
+    toast.success(_image ? 'Dados extraídos do print — confira e salve.' : 'Formulário pré-preenchido!');
   };
 
-  const tribunaisUnicos = [...new Set(state.processos.map(p => p.tribunal))];
+  // filter(Boolean): remove tribunais vazios — um <SelectItem value=""> quebra o Radix Select
+  const tribunaisUnicos = [...new Set(state.processos.map(p => p.tribunal).filter(Boolean))];
 
   const initialForm = editProcesso
     ? { numero: editProcesso.numero, clienteId: editProcesso.clienteId, vara: editProcesso.vara, tribunal: editProcesso.tribunal, comarca: editProcesso.comarca, area: editProcesso.area, fase: editProcesso.fase, parteContraria: editProcesso.parteContraria, advogadoResponsavel: editProcesso.advogadoResponsavel, valorCausa: editProcesso.valorCausa, dataDistribuicao: editProcesso.dataDistribuicao, status: editProcesso.status, polo: editProcesso.polo, objeto: editProcesso.objeto, observacoes: editProcesso.observacoes }
@@ -1456,17 +2043,19 @@ export default function Processos() {
             {state.processos.length - arquivadosCount} ativo(s){arquivadosCount > 0 && ` · ${arquivadosCount} arquivado(s)`}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarLoteOpen(true)}>
-            <ListPlus size={14} className="mr-1" /> Importar em Lote
-          </Button>
-          <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarIAOpen(true)}>
-            <Brain size={14} className="mr-1" /> Importar com IA
-          </Button>
-          <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditProcesso(null); setPrefill(null); setDialogOpen(true); }}>
-            <Plus size={14} className="mr-1" /> Novo Processo
-          </Button>
-        </div>
+        {usuario.podeEditar && (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarLoteOpen(true)}>
+              <ListPlus size={14} className="mr-1" /> Importar em Lote
+            </Button>
+            <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportarIAOpen(true)}>
+              <Brain size={14} className="mr-1" /> Importar com IA
+            </Button>
+            <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditProcesso(null); setPrefill(null); setDialogOpen(true); }}>
+              <Plus size={14} className="mr-1" /> Novo Processo
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -1498,6 +2087,30 @@ export default function Processos() {
         <Button variant={mostrarArquivados ? 'default' : 'outline'} size="sm" className={`h-9 text-xs ${mostrarArquivados ? 'bg-slate-500 hover:bg-slate-600' : ''}`} onClick={() => setMostrarArquivados(v => !v)}>
           <Archive size={14} className="mr-1" /> {mostrarArquivados ? 'Ver ativos' : `Arquivados${arquivadosCount ? ` (${arquivadosCount})` : ''}`}
         </Button>
+        {alertaCount > 0 && (
+          <Button variant={soAlerta ? 'default' : 'outline'} size="sm"
+            className={`h-9 text-xs ${soAlerta ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}`}
+            onClick={() => { setSoAlerta(v => !v); setSoNovos(false); }}>
+            <AlertCircle size={14} className="mr-1" /> {soAlerta ? 'Ver todos' : `Alertas de arquivamento (${alertaCount})`}
+          </Button>
+        )}
+        {novosCount > 0 && (
+          <Button variant={soNovos ? 'default' : 'outline'} size="sm"
+            className={`h-9 text-xs ${soNovos ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}
+            onClick={() => { setSoNovos(v => !v); setSoAlerta(false); }}>
+            <Sparkles size={14} className="mr-1" /> {soNovos ? 'Ver todos' : `Novos capturados (${novosCount})`}
+          </Button>
+        )}
+        {soNovos && novosCount > 0 && usuario.podeEditar && (
+          <Button size="sm" variant="outline" className="h-9 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={marcarTodosRevisados}>
+            <CheckCheck size={14} className="mr-1" /> Marcar todos como revisados
+          </Button>
+        )}
+        {soAlerta && alertaCount > 0 && usuario.podeEditar && (
+          <Button size="sm" variant="outline" className="h-9 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" onClick={fecharTodosAlertas}>
+            <X size={14} className="mr-1" /> Fechar todos (sem arquivar)
+          </Button>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -1515,29 +2128,100 @@ export default function Processos() {
                     </div>
                     <div className="min-w-0">
                       <p className="font-mono text-xs font-bold text-[#1e3a5f] truncate">{proc.numero}</p>
-                      <p className="text-sm font-medium text-gray-800 mt-0.5">{cliente?.nome || '—'} <span className="text-gray-400">vs</span> {proc.parteContraria}</p>
+                      <p className="text-sm font-medium text-gray-800 mt-0.5">{cliente?.nome || '—'} <span className="text-gray-400">vs</span> {proc.parteContraria || '—'}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className="text-xs text-gray-500">{proc.tribunal} · {proc.comarca}</span>
+                        <span className="text-xs text-gray-500">{proc.tribunal}{proc.comarca ? ` · ${proc.comarca}` : ''}</span>
+                        {(proc.numero || '').replace(/\D/g, '').length !== 20 && (
+                          <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5" title="Número fora do padrão CNJ (20 dígitos) — os andamentos não são capturados automaticamente pelo DataJud"><AlertCircle size={9} className="mr-0.5" />Sem CNJ</Badge>
+                        )}
                         <Badge variant="outline" className="text-[10px] px-1.5 capitalize">{proc.area}</Badge>
                         <Badge variant="outline" className="text-[10px] px-1.5 capitalize">{proc.fase}</Badge>
+                        {proc.alertaNovo && <Badge className="bg-blue-600 text-white text-[10px] px-1.5"><Sparkles size={9} className="mr-0.5" />Novo</Badge>}
+                        {proc.origem === 'auto_intimacao' && <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5"><Bot size={9} className="mr-0.5" />Auto (intimação)</Badge>}
+                        {proc.origem === 'imagem' && <Badge className="bg-teal-100 text-teal-700 text-[10px] px-1.5"><ImageIcon size={9} className="mr-0.5" />Print</Badge>}
+                        {proc.processoOrigemId && procById.get(proc.processoOrigemId) && <Badge variant="outline" className="text-[10px] px-1.5 text-purple-700 border-purple-300"><Link2 size={9} className="mr-0.5" />origem: {procById.get(proc.processoOrigemId)!.numero}</Badge>}
                         {prazosProc > 0 && <Badge className="bg-yellow-100 text-yellow-700 text-[10px] px-1.5"><Clock size={9} className="mr-0.5" />{prazosProc} prazo(s)</Badge>}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <Badge className={`${statusColor[proc.status]} capitalize text-[10px]`}>{proc.status}</Badge>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={e => { e.stopPropagation(); setEditProcesso(proc); setPrefill(null); setDialogOpen(true); }}><Edit size={13} /></Button>
-                    {proc.arquivado
-                      ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={e => { e.stopPropagation(); restaurarProcesso(proc); }}><ArchiveRestore size={13} /></Button>
-                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={e => { e.stopPropagation(); setArquivarId(proc.id); }}><Archive size={13} /></Button>}
+                    {usuario.podeEditar && (
+                      <>
+                        {(proc.alertaArquivamento?.ativo || proc.alertaNovo) && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-700 hover:bg-gray-100" title="Tirar dos alertas/novos sem arquivar (continua ativo)" onClick={e => { e.stopPropagation(); dispensarDosAlertas(proc); }}><X size={13} className="mr-0.5" />Fechar</Button>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={e => { e.stopPropagation(); setEditProcesso(proc); setPrefill(null); setDialogOpen(true); }}><Edit size={13} /></Button>
+                        {proc.arquivado
+                          ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={e => { e.stopPropagation(); restaurarProcesso(proc); }}><ArchiveRestore size={13} /></Button>
+                          : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={e => { e.stopPropagation(); setArquivarId(proc.id); }}><Archive size={13} /></Button>}
+                      </>
+                    )}
                     <ChevronRight size={14} className="text-gray-400" />
                   </div>
                 </div>
+                {usuario.podeEditar && proc.sugestaoOrigemId && !proc.arquivado && procById.get(proc.sugestaoOrigemId) && (
+                  <div onClick={e => e.stopPropagation()} className="mt-2 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 text-[11px] text-amber-800">
+                    <GitMerge size={13} className="flex-shrink-0" />
+                    <span className="min-w-0">
+                      Possível continuação de <span className="font-mono font-semibold">{procById.get(proc.sugestaoOrigemId)!.numero}</span>
+                      <span className="text-amber-600"> (mesmas partes · {procById.get(proc.sugestaoOrigemId)!.tribunal}).</span> Vincular como processo de origem?
+                    </span>
+                    <div className="ml-auto flex gap-1 flex-shrink-0">
+                      <Button size="sm" className="h-6 text-[10px] px-2 bg-amber-600 hover:bg-amber-700" onClick={() => confirmarOrigem(proc)}><Link2 size={10} className="mr-0.5" />Vincular</Button>
+                      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-amber-300 text-amber-700" onClick={() => descartarSugestao(proc)}>Descartar</Button>
+                    </div>
+                  </div>
+                )}
+                {proc.alertaNovo && !proc.arquivado && (
+                  <div onClick={e => e.stopPropagation()} className="mt-2 bg-blue-50 border border-blue-200 rounded p-2.5 text-[11px] text-blue-800">
+                    <div className="flex items-start gap-1.5">
+                      <Sparkles size={14} className="flex-shrink-0 mt-0.5 text-blue-600" />
+                      <div className="min-w-0 flex-1">
+                        <p><b>Processo novo capturado automaticamente.</b> Confira os dados e veja se é preciso tomar providências (prazo, vínculo de origem, responsável).</p>
+                        {usuario.podeEditar ? (
+                          <div className="flex gap-1.5 mt-1.5">
+                            <Button size="sm" className="h-6 text-[10px] px-2 bg-blue-600 hover:bg-blue-700" onClick={() => setViewProcesso(proc)}>Abrir e revisar</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-blue-300 text-blue-700" onClick={() => marcarRevisado(proc)}><CheckCheck size={11} className="mr-0.5" />Marcar como revisado</Button>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-blue-600 mt-1">Somente leitura — um editor pode marcar como revisado.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {proc.alertaArquivamento?.ativo && (
+                  <div onClick={e => e.stopPropagation()} className="mt-2 bg-amber-50 border border-amber-300 rounded p-2.5 text-[11px] text-amber-800">
+                    <div className="flex items-start gap-1.5">
+                      <AlertCircle size={14} className="flex-shrink-0 mt-0.5 text-amber-600" />
+                      <div className="min-w-0 flex-1">
+                        <p><b>Alerta: possível baixa/arquivamento</b> detectado em {proc.alertaArquivamento.fonte === 'publicacao' ? 'publicação' : 'andamento'}{proc.alertaArquivamento.data ? ` de ${fmtDataBR(proc.alertaArquivamento.data)}` : ''}.</p>
+                        {proc.alertaArquivamento.trecho && <p className="italic text-amber-700 mt-0.5 line-clamp-2">“{proc.alertaArquivamento.trecho}”</p>}
+                        {usuario.podeEditar ? (
+                          <div className="flex gap-1.5 mt-1.5">
+                            <Button size="sm" className="h-6 text-[10px] px-2 bg-amber-600 hover:bg-amber-700" onClick={() => setAlertaConcordar(proc)}>Concordar e inativar</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 border-amber-300 text-amber-700" onClick={() => ignorarAlerta(proc)}>Ignorar</Button>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-amber-600 mt-1">Somente leitura — um editor pode confirmar a inativação.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
         })}
       </div>
+      {alertaConcordar && (
+        <DialogConcordarArquivamento
+          proc={alertaConcordar}
+          onConfirm={(s, o) => concordarArquivamento(alertaConcordar, s, o)}
+          onCancel={() => setAlertaConcordar(null)}
+        />
+      )}
 
       {/* Dialog Importar em Lote */}
       <Dialog open={importarLoteOpen} onOpenChange={setImportarLoteOpen}>
@@ -1605,7 +2289,7 @@ export default function Processos() {
 
       {/* Dialog Visualizar */}
       <Dialog open={!!viewProcesso} onOpenChange={() => setViewProcesso(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-5xl w-[95vw]">
           <DialogHeader><DialogTitle className="text-[#1e3a5f]">Detalhes do Processo</DialogTitle></DialogHeader>
           {viewProcesso && <ProcessoDetalhe processo={viewProcesso} onClose={() => setViewProcesso(null)} />}
         </DialogContent>

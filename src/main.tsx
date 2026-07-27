@@ -8,3 +8,11 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+// Registra o service worker (habilita instalar o sistema como app independente).
+// updateViaCache: 'none' faz o navegador revalidar o sw.js sempre, para pegar novas versões.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => { /* ignora se falhar */ })
+  })
+}

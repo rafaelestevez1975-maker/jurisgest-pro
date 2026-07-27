@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { useApp } from '../context';
 import { diasRestantes } from '../data';
+import type { Processo } from '../types';
+import { ProcessoDetalheDialog } from './Processos';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Users, Briefcase, Clock, Bell, AlertTriangle, CheckCircle, TrendingUp, Scale, Activity, DollarSign } from 'lucide-react';
@@ -19,8 +22,25 @@ function urgencyBadge(dias: number) {
 }
 
 export default function Dashboard() {
-  const { state } = useApp();
-  const { clientes, processos, prazos, publicacoes } = state;
+  const { state, usuario } = useApp();
+  const [verProc, setVerProc] = useState<Processo | null>(null);
+  const abrirProc = (procId?: string) => { const p = state.processos.find(x => x.id === procId); if (p) setVerProc(p); };
+  const abrirProcNum = (num?: string) => { const p = state.processos.find(x => x.numero === num); if (p) setVerProc(p); };
+  const { clientes } = state;
+  // Recorte por área do perfil: processos pela própria área; prazos/publicações
+  // pela área do processo vinculado (sem vínculo => permanece visível).
+  const areaVisivel = (processoId?: string) => {
+    if (!processoId) return true;
+    const proc = state.processos.find(x => x.id === processoId);
+    return proc ? usuario.emArea(proc.area) : true;
+  };
+  // Tarefa em que o usuário logado é responsável (ou quem agendou): sempre visível,
+  // mesmo que o processo seja de outra área. (Admin/sem recorte já vê tudo.)
+  const minhaTarefa = (p: { responsavel?: string; agendadoPor?: string }) =>
+    p.responsavel === usuario.nome || p.agendadoPor === usuario.nome;
+  const processos = state.processos.filter(p => usuario.emArea(p.area));
+  const prazos = state.prazos.filter(p => areaVisivel(p.processoId) || minhaTarefa(p));
+  const publicacoes = state.publicacoes.filter(p => areaVisivel(p.processoId));
 
   const processosAtivos = processos.filter(p => p.status === 'ativo').length;
   const prazosVencendo7 = prazos.filter(p => p.status === 'pendente' && diasRestantes(p.dataHora) <= 7 && diasRestantes(p.dataHora) >= 0).length;
@@ -163,7 +183,7 @@ export default function Dashboard() {
                   const dias = diasRestantes(prazo.dataHora);
                   const proc = state.processos.find(p => p.id === prazo.processoId);
                   return (
-                    <div key={prazo.id} className={`flex items-center justify-between px-4 py-3 ${urgencyColor(dias)}`}>
+                    <div key={prazo.id} onClick={() => proc && abrirProc(proc.id)} title={proc ? 'Abrir o processo' : undefined} className={`flex items-center justify-between px-4 py-3 ${urgencyColor(dias)} ${proc ? 'cursor-pointer hover:brightness-95' : ''}`}>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{prazo.descricao}</p>
                         <p className="text-xs opacity-70">{proc?.numero?.slice(0, 20)}... · {prazo.responsavel.split(' ')[1] || prazo.responsavel}</p>
@@ -239,7 +259,7 @@ export default function Dashboard() {
             ) : (
               <div className="divide-y">
                 {andamentosRecentes.map(m => (
-                  <div key={m.id} className="px-4 py-2.5 flex items-start gap-2">
+                  <div key={m.id} onClick={() => abrirProcNum(m.numero)} title="Abrir o processo" className="px-4 py-2.5 flex items-start gap-2 cursor-pointer hover:bg-gray-50">
                     <span className="text-[11px] font-mono text-gray-400 flex-shrink-0 mt-0.5">{fmtData(m.data)}</span>
                     <div className="min-w-0">
                       <p className="text-xs text-gray-700 truncate">{m.descricao}</p>
@@ -265,7 +285,7 @@ export default function Dashboard() {
             ) : (
               <div className="divide-y">
                 {pubsRecentes.map(pub => (
-                  <div key={pub.id} className="px-4 py-3 flex items-start gap-3">
+                  <div key={pub.id} onClick={() => abrirProc(pub.processoId)} title={pub.processoId ? 'Abrir o processo' : undefined} className={`px-4 py-3 flex items-start gap-3 ${pub.processoId ? 'cursor-pointer hover:bg-gray-50' : ''}`}>
                     {pub.status === 'não_lida'
                       ? <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
                       : <CheckCircle size={14} className="text-green-500 mt-0.5 flex-shrink-0" />}
@@ -285,6 +305,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+      <ProcessoDetalheDialog processo={verProc} onClose={() => setVerProc(null)} />
     </div>
   );
 }

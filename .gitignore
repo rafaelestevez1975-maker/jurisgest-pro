@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .parcel-cache/
 .vercel
+
+# Local Claude Code preview config
+.claude/

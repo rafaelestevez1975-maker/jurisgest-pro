@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useApp, genId } from '../context';
 import { supabase } from '../lib/supabase';
-import type { Peticao, TipoPeticao, StatusPeticao } from '../types';
+import type { Peticao, TipoPeticao, StatusPeticao, Processo } from '../types';
+import { ProcessoDetalheDialog } from './Processos';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -10,8 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, FileText, Paperclip, Download, Loader2, X } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, FileText, Paperclip, Download, Loader2, X, Wand2, Copy, Cpu, Brain, KeyRound, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import type { ModoIA, DadosPeticao } from '../lib/ia';
+import { montarPromptPeticao, promptCompletoParaColar, chamarClaudeAPI, chamarClaudeLocal, lerIAConfig, salvarIAConfig, SYSTEM_PETICAO, MODELOS_IA } from '../lib/ia';
 
 const TIPOS: TipoPeticao[] = ['inicial','contestação','recurso','parecer','embargos','outro'];
 const STATUS_LIST: StatusPeticao[] = ['rascunho','protocolado','juntado'];
@@ -178,8 +181,204 @@ function ImportCSVPet({ onImport, onClose }: { onImport: (pets: Omit<Peticao, 'i
   );
 }
 
+// Mapeia o tipo de peça (texto livre) para o enum de TipoPeticao
+function tipoPecaParaEnum(t: string): TipoPeticao {
+  const s = t.toLowerCase();
+  if (s.includes('inicial')) return 'inicial';
+  if (s.includes('contesta')) return 'contestação';
+  if (s.includes('recurso') || s.includes('apela') || s.includes('agravo')) return 'recurso';
+  if (s.includes('embargos')) return 'embargos';
+  if (s.includes('parecer')) return 'parecer';
+  return 'outro';
+}
+
+const MODOS: { id: ModoIA; nome: string; icon: React.ComponentType<{ size?: number; className?: string }>; desc: string }[] = [
+  { id: 'copiar', nome: 'Copiar p/ o Claude do meu PC', icon: Copy, desc: 'Gera o prompt pronto para colar no Claude Desktop / Claude.ai (usa sua assinatura, sem custo de API). Você cola a resposta de volta.' },
+  { id: 'local', nome: 'Ponte local (Claude Code)', icon: Cpu, desc: 'Chama um serviço rodando na sua máquina (ex.: Claude Code exposto em HTTP local). Gera automaticamente aqui dentro.' },
+  { id: 'api', nome: 'API Anthropic (nuvem)', icon: Brain, desc: 'Chama a API da Anthropic com sua chave (cobra por uso). Gera automaticamente aqui dentro.' },
+];
+
+function DialogGerarIA({ onSalvar, onClose }: {
+  onSalvar: (d: Omit<Peticao, 'id' | 'criadoEm'>) => void;
+  onClose: () => void;
+}) {
+  const { state } = useApp();
+  const apiKey = state.anthropicApiKey;
+  const [cfg, setCfg] = useState(() => lerIAConfig());
+  const [processoId, setProcessoId] = useState('');
+  const [tipoPeca, setTipoPeca] = useState('Petição inicial');
+  const [fatos, setFatos] = useState('');
+  const [pedidos, setPedidos] = useState('');
+  const [instrucoes, setInstrucoes] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
+  const [resultado, setResultado] = useState('');     // minuta gerada (api/local)
+  const [promptColar, setPromptColar] = useState('');  // prompt para colar (modo copiar)
+  const [respostaColada, setRespostaColada] = useState('');
+
+  const proc = state.processos.find(p => p.id === processoId);
+  const cli = proc ? state.clientes.find(c => c.id === proc.clienteId) : null;
+
+  const setModo = (modo: ModoIA) => { const novo = { ...cfg, modo }; setCfg(novo); salvarIAConfig(novo); setErro(''); };
+  const setModel = (model: string) => { const novo = { ...cfg, model }; setCfg(novo); salvarIAConfig(novo); };
+  const setEndpoint = (endpointLocal: string) => { const novo = { ...cfg, endpointLocal }; setCfg(novo); salvarIAConfig(novo); };
+
+  const montarDados = (): DadosPeticao => ({
+    tipoPeca,
+    tribunal: proc?.tribunal || '', vara: proc?.vara || '', comarca: proc?.comarca || '',
+    numero: proc?.numero || '', cliente: cli?.nome || '', poloCliente: proc?.polo || '',
+    parteContraria: proc?.parteContraria || '', area: proc?.area || '',
+    fatos, pedidos, instrucoes,
+    escritorio: state.escritorio.nome, oab: state.escritorio.oab,
+  });
+
+  const gerar = async () => {
+    if (!fatos.trim()) { setErro('Descreva os fatos do caso.'); return; }
+    setErro(''); setResultado(''); setPromptColar(''); setRespostaColada('');
+    const dados = montarDados();
+    if (cfg.modo === 'copiar') {
+      setPromptColar(promptCompletoParaColar(dados));
+      return;
+    }
+    setLoading(true);
+    try {
+      if (cfg.modo === 'api') {
+        if (!apiKey) throw new Error('Configure a Chave API Anthropic em Configurações para usar o modo nuvem — ou use "Copiar p/ o Claude do meu PC".');
+        const txt = await chamarClaudeAPI({ apiKey, model: cfg.model, system: SYSTEM_PETICAO, prompt: montarPromptPeticao(dados), maxTokens: 4096 });
+        setResultado(txt);
+      } else {
+        const txt = await chamarClaudeLocal({ endpoint: cfg.endpointLocal, system: SYSTEM_PETICAO, prompt: montarPromptPeticao(dados) });
+        setResultado(txt);
+      }
+    } catch (e) { setErro((e as Error)?.message || 'Falha ao gerar.'); }
+    setLoading(false);
+  };
+
+  const textoFinal = resultado || respostaColada;
+
+  const salvar = () => {
+    if (!textoFinal.trim()) { setErro('Ainda não há texto de petição para salvar.'); return; }
+    onSalvar({
+      nome: `${tipoPeca}${proc ? ` — ${proc.numero}` : ''}`,
+      processoId, tipo: tipoPecaParaEnum(tipoPeca),
+      dataProtocolo: '', numeroProtocolo: '', status: 'rascunho',
+      observacoes: 'Minuta gerada com IA — revisar antes de protocolar.',
+      conteudo: textoFinal, arquivoPath: '', arquivoNome: '',
+    });
+  };
+
+  return (
+    <div className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <Label className="text-xs">Tipo de peça *</Label>
+          <Input className="mt-1 h-8 text-sm" value={tipoPeca} onChange={e => setTipoPeca(e.target.value)} placeholder="Ex: Contestação, Recurso de Apelação, Petição inicial…" />
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Processo <span className="text-gray-400">(opcional — puxa partes, vara, tribunal)</span></Label>
+          <Select value={processoId} onValueChange={setProcessoId}>
+            <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione o processo…" /></SelectTrigger>
+            <SelectContent>
+              {state.processos.filter(p => !p.arquivado).slice(0, 200).map(p => {
+                const c = state.clientes.find(x => x.id === p.clienteId);
+                return <SelectItem key={p.id} value={p.id}><span className="font-mono text-xs">{p.numero}</span> · {c?.nome?.split(' ')[0] || '—'}</SelectItem>;
+              })}
+            </SelectContent>
+          </Select>
+          {proc && <p className="text-[11px] text-gray-500 mt-1">{cli?.nome || '—'} ({proc.polo || 'polo ?'}) × {proc.parteContraria || '—'} · {proc.tribunal} {proc.vara}</p>}
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Fatos do caso *</Label>
+          <Textarea className="mt-1 text-sm" rows={4} value={fatos} onChange={e => setFatos(e.target.value)} placeholder="Descreva o que aconteceu, datas, valores, provas… (a IA não inventa fatos — o que faltar vira [INSERIR ...])" />
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Pedidos pretendidos</Label>
+          <Textarea className="mt-1 text-sm" rows={2} value={pedidos} onChange={e => setPedidos(e.target.value)} placeholder="Ex: condenação ao pagamento de…, tutela de urgência para…" />
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Instruções adicionais</Label>
+          <Input className="mt-1 h-8 text-sm" value={instrucoes} onChange={e => setInstrucoes(e.target.value)} placeholder="Ex: citar CDC; tom mais objetivo; incluir preliminar de…" />
+        </div>
+      </div>
+
+      {/* Modo de IA */}
+      <div className="border rounded-lg p-2.5 bg-gray-50 space-y-2">
+        <p className="text-[11px] font-semibold text-gray-600 uppercase flex items-center gap-1"><Wand2 size={12} /> Como gerar</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {MODOS.map(m => {
+            const Icon = m.icon; const active = cfg.modo === m.id;
+            return (
+              <button key={m.id} type="button" onClick={() => setModo(m.id)}
+                className={`text-left rounded border p-2 text-[11px] transition-colors ${active ? 'border-blue-400 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
+                <Icon size={13} className="mb-1" />
+                <p className="font-semibold leading-tight">{m.nome}</p>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-gray-500">{MODOS.find(m => m.id === cfg.modo)?.desc}</p>
+        {(cfg.modo === 'api' || cfg.modo === 'local') && (
+          <div className="flex items-center gap-2">
+            <Label className="text-[11px] text-gray-500 flex-shrink-0">Modelo</Label>
+            <Select value={cfg.model} onValueChange={setModel}>
+              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>{MODELOS_IA.map(m => <SelectItem key={m.id} value={m.id} className="text-xs">{m.nome}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        )}
+        {cfg.modo === 'api' && !apiKey && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 flex items-center gap-1"><KeyRound size={11} /> Sem chave API — configure em Configurações ou use "Copiar p/ o Claude do meu PC".</p>
+        )}
+        {cfg.modo === 'local' && (
+          <div className="flex items-center gap-2">
+            <Label className="text-[11px] text-gray-500 flex-shrink-0">Endereço local</Label>
+            <Input className="h-7 text-xs font-mono" value={cfg.endpointLocal} onChange={e => setEndpoint(e.target.value)} placeholder="http://localhost:4141/gerar" />
+          </div>
+        )}
+      </div>
+
+      {erro && <div className="bg-red-50 border border-red-200 rounded p-2 text-xs text-red-700 flex items-start gap-1.5"><X size={13} className="flex-shrink-0 mt-0.5" />{erro}</div>}
+
+      <Button className="w-full h-9 bg-[#1e3a5f] hover:bg-[#2563eb] text-sm" onClick={gerar} disabled={loading}>
+        {loading ? <><Loader2 size={14} className="animate-spin mr-2" />Gerando…</> : <><Sparkles size={14} className="mr-2" />{cfg.modo === 'copiar' ? 'Gerar prompt para o Claude' : 'Gerar minuta'}</>}
+      </Button>
+
+      {/* Modo copiar: prompt + colar resposta */}
+      {cfg.modo === 'copiar' && promptColar && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold text-gray-600 uppercase">1) Copie e cole no seu Claude</p>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { navigator.clipboard?.writeText(promptColar); toast.success('Prompt copiado! Cole no Claude Desktop / Claude.ai.'); }}>
+              <Copy size={12} className="mr-1" /> Copiar prompt
+            </Button>
+          </div>
+          <Textarea className="text-[11px] font-mono bg-gray-50" rows={5} readOnly value={promptColar} />
+          <p className="text-[11px] font-semibold text-gray-600 uppercase">2) Cole aqui a resposta do Claude</p>
+          <Textarea className="text-sm" rows={6} value={respostaColada} onChange={e => setRespostaColada(e.target.value)} placeholder="Cole aqui a minuta que o Claude gerou…" />
+        </div>
+      )}
+
+      {/* Modo api/local: minuta gerada (editável) */}
+      {(cfg.modo === 'api' || cfg.modo === 'local') && resultado && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold text-gray-600 uppercase">Minuta gerada (revise e edite antes de salvar)</p>
+          <Textarea className="text-sm" rows={10} value={resultado} onChange={e => setResultado(e.target.value)} />
+        </div>
+      )}
+
+      <DialogFooter>
+        <Button variant="outline" size="sm" onClick={onClose}>Fechar</Button>
+        <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" disabled={!textoFinal.trim()} onClick={salvar}>
+          <FileText size={13} className="mr-1" /> Salvar como petição
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
 export default function Peticoes() {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, usuario } = useApp();
+  const [verProc, setVerProc] = useState<Processo | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
@@ -188,12 +387,15 @@ export default function Peticoes() {
   const [arquivarId, setArquivarId] = useState<string | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [iaOpen, setIaOpen] = useState(false);
 
   const arquivadosCount = state.peticoes.filter(p => p.arquivado).length;
 
   const filtered = state.peticoes.filter(p => {
     if (mostrarArquivados ? !p.arquivado : !!p.arquivado) return false;
     const proc = state.processos.find(pr => pr.id === p.processoId);
+    const matchArea = usuario.areasVisiveis === null || !p.processoId || usuario.emArea(proc?.area);
+    if (!matchArea) return false;
     const matchSearch = !search || p.nome.toLowerCase().includes(search.toLowerCase()) || p.numeroProtocolo?.includes(search) || proc?.numero.includes(search);
     const matchStatus = filterStatus === 'todos' || p.status === filterStatus;
     const matchTipo = filterTipo === 'todos' || p.tipo === filterTipo;
@@ -236,6 +438,12 @@ export default function Peticoes() {
     toast.success(`${novas.length} petições importadas!`);
   };
 
+  const handleGeradoIA = (data: Omit<Peticao, 'id' | 'criadoEm'>) => {
+    dispatch({ type: 'ADD_PETICAO', payload: { ...data, id: genId(), criadoEm: new Date().toISOString().split('T')[0] } });
+    toast.success('Petição gerada e salva como rascunho — revise antes de protocolar.');
+    setIaOpen(false);
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -245,10 +453,13 @@ export default function Peticoes() {
             {state.peticoes.length - arquivadosCount} ativa(s){arquivadosCount > 0 && ` · ${arquivadosCount} arquivada(s)`}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}><Upload size={14} className="mr-1" />Importar CSV</Button>
-          <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditPeticao(null); setDialogOpen(true); }}><Plus size={14} className="mr-1" />Nova Petição</Button>
-        </div>
+        {usuario.podeEditar && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}><Upload size={14} className="mr-1" />Importar CSV</Button>
+            <Button variant="outline" size="sm" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setIaOpen(true)}><Wand2 size={14} className="mr-1" />Gerar com IA</Button>
+            <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditPeticao(null); setDialogOpen(true); }}><Plus size={14} className="mr-1" />Nova Petição</Button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -285,7 +496,9 @@ export default function Peticoes() {
                     <div className="min-w-0">
                       <p className="font-semibold text-sm text-[#1e3a5f]">{pet.nome}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-gray-500">
-                        <span className="font-mono truncate max-w-48">{proc?.numero?.slice(0,20) || '—'}...</span>
+                        {proc
+                          ? <button onClick={() => setVerProc(proc)} title="Abrir o processo" className="font-mono truncate max-w-48 text-[#2563eb] hover:underline">{proc.numero.slice(0,20)}...</button>
+                          : <span className="font-mono truncate max-w-48 text-gray-400">— sem processo</span>}
                         {cli && <span>· {cli.nome.split(' ')[0]}</span>}
                         {pet.dataProtocolo && <span>· {pet.dataProtocolo}</span>}
                         {pet.numeroProtocolo && <span className="text-blue-600">#{pet.numeroProtocolo}</span>}
@@ -296,10 +509,10 @@ export default function Peticoes() {
                     <Badge variant="outline" className="capitalize text-[10px]">{pet.tipo}</Badge>
                     <Badge className={`${statusColor[pet.status]} capitalize text-[10px]`}>{pet.status}</Badge>
                     {pet.arquivoPath && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700" title="Baixar arquivo" onClick={() => baixarArquivo(pet)}><Download size={13} /></Button>}
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditPeticao(pet); setDialogOpen(true); }}><Edit size={12} /></Button>
-                    {pet.arquivado
+                    {usuario.podeEditar && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditPeticao(pet); setDialogOpen(true); }}><Edit size={12} /></Button>}
+                    {usuario.podeEditar && (pet.arquivado
                       ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => restaurarPeticao(pet)}><ArchiveRestore size={13} /></Button>
-                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(pet.id)}><Archive size={13} /></Button>}
+                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(pet.id)}><Archive size={13} /></Button>)}
                   </div>
                 </div>
                 {pet.observacoes && <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded px-2 py-1">{pet.observacoes}</p>}
@@ -322,12 +535,20 @@ export default function Peticoes() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={iaOpen} onOpenChange={setIaOpen}>
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="text-[#1e3a5f] flex items-center gap-2"><Wand2 size={16} className="text-blue-500" />Gerar petição com IA</DialogTitle></DialogHeader>
+          {iaOpen && <DialogGerarIA onSalvar={handleGeradoIA} onClose={() => setIaOpen(false)} />}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!arquivarId} onOpenChange={() => setArquivarId(null)}>
         <DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Arquivar petição</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-600">A petição sai da lista ativa, mas <b>não é excluída</b> — você pode restaurá-la em "Arquivadas".</p>
           <DialogFooter><Button variant="outline" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button><Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarPeticao(arquivarId)}>Arquivar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+      <ProcessoDetalheDialog processo={verProc} onClose={() => setVerProc(null)} />
     </div>
   );
 }

@@ -1,8 +1,24 @@
-import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
-import type { AppState, Cliente, Processo, Prazo, Publicacao, Peticao, Advogado, Feriado, ConfigEscritorio, CredencialTribunal } from './types';
+import React, { createContext, useContext, useReducer, useEffect, useState, useMemo } from 'react';
+import type { AppState, Cliente, Processo, Prazo, Publicacao, Peticao, Advogado, Feriado, ConfigEscritorio, CredencialTribunal, PapelUsuario, AreaDireito } from './types';
 import { INITIAL_STATE } from './data';
 import { loadState, db } from './lib/db';
+import { supabase } from './lib/supabase';
 import { toast } from 'sonner';
+
+// UID fixo do dono do sistema (sempre admin, espelha is_jurisgest_user/jg_papel no banco).
+const OWNER_UID = '5a4b91a1-8cb1-45fe-b4dc-b0da4dd0fe48';
+
+export interface UsuarioAtual {
+  email: string;
+  uid: string;
+  nome: string;
+  papel: PapelUsuario;
+  isAdmin: boolean;
+  podeEditar: boolean;                    // admin ou advogado (visualizador = false)
+  areas: AreaDireito[];
+  areasVisiveis: AreaDireito[] | null;    // null = vê todas as áreas (admin ou sem recorte)
+  emArea: (area?: string) => boolean;     // true se a área é visível ao usuário
+}
 
 // Avisa o usuário se uma gravação no Supabase falhar (evita perda silenciosa).
 function reportErro(p: unknown, label: string) {
@@ -149,11 +165,73 @@ function syncToSupabase(action: Action, nextState: AppState) {
   }
 }
 
+// --- Auditoria (log de atividades por usuário) ---
+// Usuário atual em escopo de módulo (setado pelo provider) para o log fire-and-forget.
+let usuarioLog: { email: string; nome: string } = { email: '', nome: '' };
+
+function descreverAtividade(action: Action): { acao: string; entidade: string; entidade_id?: string; descricao: string } | null {
+  const p = (action as { payload?: unknown }).payload as Record<string, unknown> | string | unknown[] | undefined;
+  const o = (p && typeof p === 'object' && !Array.isArray(p)) ? p as Record<string, unknown> : undefined;
+  const s = (v: unknown) => (v == null ? '' : String(v));
+  switch (action.type) {
+    case 'ADD_CLIENTE': return { acao: 'criar', entidade: 'cliente', entidade_id: s(o?.id), descricao: `Cadastrou cliente "${s(o?.nome)}"` };
+    case 'UPDATE_CLIENTE': return { acao: 'editar', entidade: 'cliente', entidade_id: s(o?.id), descricao: `Editou cliente "${s(o?.nome)}"` };
+    case 'DELETE_CLIENTE': return { acao: 'excluir', entidade: 'cliente', entidade_id: s(p), descricao: 'Excluiu um cliente' };
+    case 'ADD_PROCESSO': return { acao: 'criar', entidade: 'processo', entidade_id: s(o?.id), descricao: `Cadastrou processo ${s(o?.numero)}` };
+    case 'UPDATE_PROCESSO': return { acao: o?.arquivado ? 'arquivar' : 'editar', entidade: 'processo', entidade_id: s(o?.id), descricao: `${o?.arquivado ? 'Arquivou' : 'Atualizou'} processo ${s(o?.numero)}` };
+    case 'DELETE_PROCESSO': return { acao: 'excluir', entidade: 'processo', entidade_id: s(p), descricao: 'Excluiu um processo' };
+    case 'ADD_PRAZO': return { acao: 'agendar', entidade: 'prazo', entidade_id: s(o?.id), descricao: `Agendou: ${s(o?.descricao)}${o?.dataHora ? ' — ' + s(o.dataHora).split('T')[0] : ''}` };
+    case 'UPDATE_PRAZO': return { acao: 'editar', entidade: 'prazo', entidade_id: s(o?.id), descricao: `Atualizou prazo: ${s(o?.descricao)}` };
+    case 'DELETE_PRAZO': return { acao: 'excluir', entidade: 'prazo', entidade_id: s(p), descricao: 'Excluiu um prazo' };
+    case 'ADD_PUBLICACAO': return { acao: 'criar', entidade: 'publicacao', entidade_id: s(o?.id), descricao: `Adicionou publicação (${s(o?.tribunal)})` };
+    case 'UPDATE_PUBLICACAO': return { acao: 'editar', entidade: 'publicacao', entidade_id: s(o?.id), descricao: `Atualizou publicação ${s(o?.numeroProcesso)}` };
+    case 'DELETE_PUBLICACAO': return { acao: 'excluir', entidade: 'publicacao', entidade_id: s(p), descricao: 'Excluiu uma publicação' };
+    case 'ADD_PETICAO': return { acao: 'criar', entidade: 'peticao', entidade_id: s(o?.id), descricao: `Criou petição "${s(o?.nome)}"` };
+    case 'UPDATE_PETICAO': return { acao: 'editar', entidade: 'peticao', entidade_id: s(o?.id), descricao: `Atualizou petição "${s(o?.nome)}"` };
+    case 'DELETE_PETICAO': return { acao: 'excluir', entidade: 'peticao', entidade_id: s(p), descricao: 'Excluiu uma petição' };
+    case 'ADD_ADVOGADO': return { acao: 'criar', entidade: 'usuario', entidade_id: s(o?.id), descricao: `Cadastrou usuário "${s(o?.nome)}"` };
+    case 'UPDATE_ADVOGADO': return { acao: 'editar', entidade: 'usuario', entidade_id: s(o?.id), descricao: `Editou usuário "${s(o?.nome)}"` };
+    case 'DELETE_ADVOGADO': return { acao: 'excluir', entidade: 'usuario', entidade_id: s(p), descricao: 'Removeu um usuário' };
+    case 'UPDATE_ESCRITORIO': return { acao: 'editar', entidade: 'configuracao', descricao: 'Atualizou dados do escritório' };
+    case 'SET_ANTHROPIC_KEY': return { acao: 'editar', entidade: 'configuracao', descricao: 'Atualizou a chave de IA' };
+    case 'ADD_CREDENCIAL':
+    case 'UPDATE_CREDENCIAL': return { acao: 'editar', entidade: 'configuracao', descricao: 'Atualizou credencial de tribunal' };
+    case 'ADD_FERIADO': return { acao: 'criar', entidade: 'configuracao', descricao: 'Adicionou feriado municipal' };
+    case 'DELETE_FERIADO': return { acao: 'excluir', entidade: 'configuracao', descricao: 'Removeu feriado municipal' };
+    case 'IMPORT_CLIENTES': return { acao: 'importar', entidade: 'cliente', descricao: `Importou ${Array.isArray(p) ? p.length : 0} cliente(s)` };
+    case 'IMPORT_PROCESSOS': return { acao: 'importar', entidade: 'processo', descricao: `Importou ${Array.isArray(p) ? p.length : 0} processo(s)` };
+    case 'IMPORT_PETICOES': return { acao: 'importar', entidade: 'peticao', descricao: `Importou ${Array.isArray(p) ? p.length : 0} petição(ões)` };
+    case 'IMPORT_PUBLICACOES': return { acao: 'importar', entidade: 'publicacao', descricao: `Importou ${Array.isArray(p) ? p.length : 0} publicação(ões)` };
+    default: return null;
+  }
+}
+
+// Log manual para ações que não passam pelo reducer (ex.: anexar documento, sincronizar).
+export function logAcao(acao: string, entidade: string, descricao: string, entidadeId?: string) {
+  db.registrarAtividade({
+    usuario_email: usuarioLog.email || null, usuario_nome: usuarioLog.nome || null,
+    acao, entidade, entidade_id: entidadeId || null, descricao,
+  }).then(() => {}).catch(() => { /* auditoria nunca quebra o app */ });
+}
+
+export function logAtividade(action: Action) {
+  const info = descreverAtividade(action);
+  if (!info) return;
+  db.registrarAtividade({
+    usuario_email: usuarioLog.email || null,
+    usuario_nome: usuarioLog.nome || null,
+    acao: info.acao, entidade: info.entidade,
+    entidade_id: info.entidade_id || null,
+    descricao: info.descricao,
+  }).then(() => {}).catch(() => { /* auditoria nunca quebra o app */ });
+}
+
 interface AppContextType {
   state: AppState;
   dispatch: React.Dispatch<Action>;
   loading: boolean;
   reload: () => Promise<void>;
+  usuario: UsuarioAtual;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -161,6 +239,47 @@ const AppContext = createContext<AppContextType | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, baseDispatch] = useReducer(reducer, INITIAL_STATE);
   const [loading, setLoading] = useState(true);
+  const [auth, setAuth] = useState<{ email: string; uid: string } | null>(null);
+
+  // Identidade do usuário logado (para resolver papel + áreas)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data.user;
+      if (u) setAuth({ email: (u.email || '').toLowerCase(), uid: u.id });
+    }).catch(() => { /* sem sessão: mantém null */ });
+  }, []);
+
+  // Perfil de acesso derivado do usuário logado + cadastro de advogados
+  const usuario: UsuarioAtual = useMemo(() => {
+    const email = auth?.email || '';
+    const uid = auth?.uid || '';
+    const isOwner = uid === OWNER_UID;
+    const adv = email ? state.advogados.find(a => (a.email || '').toLowerCase() === email) : undefined;
+    // Enquanto a identidade não resolve, assume o perfil mais restritivo (sem botões de edição),
+    // mas sem esconder dados (areasVisiveis = null) para não piscar listas vazias.
+    const papel: PapelUsuario = isOwner ? 'admin' : (auth ? (adv?.papel || 'visualizador') : 'visualizador');
+    const isAdmin = papel === 'admin';
+    const podeEditar = papel === 'admin' || papel === 'advogado';
+    const areas = (isAdmin ? [] : (adv?.areas || [])) as AreaDireito[];
+    const areasVisiveis: AreaDireito[] | null = (isAdmin || !auth || areas.length === 0) ? null : areas;
+    const emArea = (area?: string) => areasVisiveis === null || (!!area && areasVisiveis.includes(area as AreaDireito));
+    return {
+      email, uid,
+      nome: adv?.nome || (isOwner ? 'Administrador' : (email || '—')),
+      papel, isAdmin, podeEditar, areas, areasVisiveis, emArea,
+    };
+  }, [auth, state.advogados]);
+
+  // Mantém o usuário atual disponível para o log de auditoria + registra o "login/acesso"
+  // uma vez por sessão do navegador (quando a identidade resolve).
+  useEffect(() => {
+    usuarioLog = { email: usuario.email, nome: usuario.nome };
+    if (usuario.email && !sessionStorage.getItem('jg_login_logged')) {
+      sessionStorage.setItem('jg_login_logged', '1');
+      db.registrarAtividade({ usuario_email: usuario.email, usuario_nome: usuario.nome, acao: 'login', entidade: 'sessao', descricao: 'Acessou o sistema' })
+        .then(() => {}).catch(() => { /* ignora */ });
+    }
+  }, [usuario.email, usuario.nome]);
 
   // Load from Supabase on mount, fall back to localStorage (offline)
   useEffect(() => {
@@ -186,9 +305,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Compute next state for actions that need it (escritorio/apiKey updates)
     const nextState = reducer(state, action);
     syncToSupabase(action, nextState);
-    // Also keep localStorage as offline cache
+    logAtividade(action);   // auditoria (fire-and-forget)
+    // Cache local (offline) enxuto: sem os andamentos (podem ser milhares e estouram a
+    // cota de ~5MB do localStorage). São re-buscados do Supabase ao voltar online.
     try {
-      localStorage.setItem('jurisgest_data', JSON.stringify(nextState));
+      const enxuto = { ...nextState, processos: nextState.processos.map(p => ({ ...p, movimentacoes: [] })) };
+      localStorage.setItem('jurisgest_data', JSON.stringify(enxuto));
     } catch { /* ignore */ }
   };
 
@@ -201,7 +323,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ state, dispatch, loading, reload }}>
+    <AppContext.Provider value={{ state, dispatch, loading, reload, usuario }}>
       {children}
     </AppContext.Provider>
   );

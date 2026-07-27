@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Bot, Play, Loader2, CheckCircle2, AlertTriangle, Clock, Search, Key,
-  Eye, EyeOff, Scale, Globe, Info, Gavel, Users as UsersIcon, Plus, Trash2,
+  Eye, EyeOff, Scale, Globe, Info, Gavel, Users as UsersIcon, Plus, Trash2, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -48,11 +48,13 @@ function fmtData(iso: string | null) {
 }
 
 export default function Monitoramento() {
-  const { state, reload } = useApp();
+  const { state, reload, usuario } = useApp();
   const [config, setConfig] = useState<RoboConfig | null>(null);
   const [historico, setHistorico] = useState<Sincronizacao[]>([]);
   const [partes, setPartes] = useState<ParteMonitorada[]>([]);
   const [running, setRunning] = useState(false);
+  const [syncTudo, setSyncTudo] = useState(false);
+  const [syncProg, setSyncProg] = useState('');
   const [capturandoIntim, setCapturandoIntim] = useState(false);
   const [buscandoId, setBuscandoId] = useState<string | null>(null);
   const [tokenLocal, setTokenLocal] = useState('');
@@ -108,6 +110,41 @@ export default function Monitoramento() {
       toast.error('Falha ao executar o robô: ' + ((e as Error)?.message || e));
     }
     setRunning(false);
+  };
+
+  const sincronizarTudo = async () => {
+    setSyncTudo(true);
+    setSyncProg('Iniciando…');
+    const desde = new Date().toISOString();   // marca o início: robô só conta como "falta" o que ainda não verificou nesta rodada
+    let totalAnd = 0, totalVer = 0, restantes = 1, iter = 0, semAvanco = 0;
+    toast.info('Sincronização completa iniciada — pode levar alguns minutos. Mantenha esta aba aberta.');
+    try {
+      while (restantes > 0 && iter < 60) {
+        iter++;
+        const { data, error } = await supabase.functions.invoke('robo-tribunais', { body: { tipo: 'manual', lote: 40, desde } });
+        if (error) throw error;
+        const det = data?.detalhes || {};
+        const ver = data?.processos_verificados || 0;
+        totalVer += ver;
+        totalAnd += data?.novos_andamentos || 0;
+        restantes = det.restantes_na_fila ?? 0;
+        semAvanco = ver === 0 ? semAvanco + 1 : 0;
+        if (semAvanco >= 3) break;   // trava de segurança contra rate-limit persistente
+        if (det.rate_limited) {
+          setSyncProg(`Limite do DataJud atingido — aguardando… (faltam ~${restantes})`);
+          await new Promise(r => setTimeout(r, 45000));
+        } else {
+          setSyncProg(`${totalVer} processo(s) · ${totalAnd} andamento(s) novo(s) · faltam ~${restantes}`);
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+      toast.success(`Sincronização concluída: ${totalAnd} andamento(s) novo(s) em ${totalVer} processo(s).`);
+      await Promise.all([carregar(), reload()]);
+    } catch (e) {
+      toast.error('Falha na sincronização completa: ' + ((e as Error)?.message || e));
+    }
+    setSyncTudo(false);
+    setSyncProg('');
   };
 
   const buscarParte = async (parte: ParteMonitorada) => {
@@ -200,7 +237,7 @@ export default function Monitoramento() {
               <p className="text-sm font-medium text-gray-800">Robô ativo (execução automática a cada 6h)</p>
               <p className="text-xs text-gray-500">Última execução: {fmtData(config?.ultima_execucao ?? null)}</p>
             </div>
-            <Switch checked={!!config?.ativo} onCheckedChange={v => atualizarConfig({ ativo: v })} />
+            <Switch checked={!!config?.ativo} disabled={!usuario.podeEditar} onCheckedChange={v => atualizarConfig({ ativo: v })} />
           </div>
 
           <div className="flex items-center justify-between py-1 border-t">
@@ -208,7 +245,7 @@ export default function Monitoramento() {
               <p className="text-sm font-medium text-gray-800">Gerar publicações dos andamentos recentes</p>
               <p className="text-xs text-gray-500">Cria uma publicação "não lida" para andamentos dos últimos 3 dias</p>
             </div>
-            <Switch checked={!!config?.criar_publicacoes} onCheckedChange={v => atualizarConfig({ criar_publicacoes: v })} />
+            <Switch checked={!!config?.criar_publicacoes} disabled={!usuario.podeEditar} onCheckedChange={v => atualizarConfig({ criar_publicacoes: v })} />
           </div>
 
           <div className="grid grid-cols-3 gap-3 pt-1">
@@ -221,13 +258,30 @@ export default function Monitoramento() {
               <p className="text-xs text-gray-500 mt-0.5">Andamentos capturados</p>
             </div>
             <div className="bg-gray-50 rounded p-3 text-center flex flex-col items-center justify-center">
-              <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs w-full" onClick={executarRobo} disabled={running}>
+              <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs w-full" onClick={executarRobo} disabled={running || !usuario.podeEditar}>
                 {running ? <Loader2 size={14} className="animate-spin mr-1" /> : <Play size={14} className="mr-1" />}
                 Executar agora
               </Button>
-              <p className="text-[10px] text-gray-400 mt-1">consulta manual imediata</p>
+              <p className="text-[10px] text-gray-400 mt-1">lote pequeno (rotativo)</p>
             </div>
           </div>
+
+          {/* Sincronizar TODOS */}
+          {usuario.podeEditar && (
+            <div className="bg-blue-50 border border-blue-100 rounded p-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-[#1e3a5f] flex items-center gap-1.5"><RefreshCw size={13} /> Sincronizar TODOS os processos no DataJud</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Varre todos os processos com CNJ válido e traz os andamentos — para analisar sem entrar em cada tribunal. Pode levar alguns minutos.</p>
+                </div>
+                <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs flex-shrink-0" onClick={sincronizarTudo} disabled={syncTudo || running}>
+                  {syncTudo ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <RefreshCw size={14} className="mr-1.5" />}
+                  {syncTudo ? 'Sincronizando…' : 'Sincronizar todos'}
+                </Button>
+              </div>
+              {syncTudo && <p className="text-[11px] text-blue-700 mt-2 font-medium">{syncProg || 'Processando…'} — mantenha esta aba aberta.</p>}
+            </div>
+          )}
 
           {/* Histórico */}
           <div>
@@ -275,7 +329,7 @@ export default function Monitoramento() {
         <CardContent className="space-y-4">
           <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2.5">
             <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
-            <p><b>Como funciona:</b> as <b>intimações pela sua OAB</b> vêm de graça do CNJ (DJEN, botão verde abaixo). Já <b>descobrir todos os processos por nome</b> (do cliente ou seu) exige um provedor pago que indexa as partes (ex.: <b>Escavador</b>, com crédito grátis de teste) — cole o token abaixo para ativar essa parte. Os processos encontrados são cadastrados e monitorados pelo robô do DataJud.</p>
+            <p><b>Como funciona:</b> as <b>intimações</b> — tanto pela sua <b>OAB</b> quanto pelo <b>nome de cada cliente/parte monitorada</b> — vêm de graça do CNJ (DJEN, botão verde abaixo), em todos os tribunais do Brasil. O provedor pago (ex.: <b>Escavador</b>, com crédito grátis de teste) só é necessário para <b>descobrir a lista completa de processos</b> de um cliente (inclusive antigos/inativos que não tiveram publicação recente) — cole o token abaixo para ativar essa parte. Os processos encontrados são cadastrados e monitorados pelo robô do DataJud.</p>
           </div>
 
           {/* Token */}
@@ -289,12 +343,13 @@ export default function Monitoramento() {
                   placeholder="Cole aqui o token da API do Escavador…"
                   value={tokenLocal}
                   onChange={e => setTokenLocal(e.target.value)}
+                  disabled={!usuario.podeEditar}
                 />
                 <button type="button" className="absolute right-2 top-2.5 text-gray-400 hover:text-gray-600" onClick={() => setShowToken(s => !s)}>
                   {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-              <Button size="sm" className="h-9 bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={salvarToken} disabled={salvandoToken}>
+              <Button size="sm" className="h-9 bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={salvarToken} disabled={salvandoToken || !usuario.podeEditar}>
                 {salvandoToken ? <Loader2 size={14} className="animate-spin" /> : 'Salvar'}
               </Button>
             </div>
@@ -314,8 +369,8 @@ export default function Monitoramento() {
             <div className="bg-green-50 border border-green-200 rounded p-2.5 mb-2 flex items-start gap-2">
               <CheckCircle2 size={15} className="text-green-600 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-green-800"><b>Intimações grátis pelo CNJ:</b> captura as intimações publicadas no Diário de Justiça Eletrônico Nacional (DJEN) pela OAB dos procuradores — <b>sem custo</b>, sem provedor pago. Roda automaticamente 2×/dia.</p>
-                <Button size="sm" className="mt-2 h-8 text-xs bg-green-600 hover:bg-green-700" onClick={capturarIntimacoes} disabled={capturandoIntim}>
+                <p className="text-xs text-green-800"><b>Intimações grátis pelo CNJ:</b> captura as intimações publicadas no Diário de Justiça Eletrônico Nacional (DJEN) — pela <b>OAB dos procuradores</b> e também pelo <b>nome de cada cliente/parte monitorada</b> — em todos os tribunais (TJs, TRTs, TRFs...), <b>sem custo</b>. Roda automaticamente 2×/dia.</p>
+                <Button size="sm" className="mt-2 h-8 text-xs bg-green-600 hover:bg-green-700" onClick={capturarIntimacoes} disabled={capturandoIntim || !usuario.podeEditar}>
                   {capturandoIntim ? <Loader2 size={13} className="animate-spin mr-1" /> : <Play size={13} className="mr-1" />}
                   Capturar intimações agora (grátis)
                 </Button>
@@ -331,19 +386,21 @@ export default function Monitoramento() {
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
-                      onClick={() => buscarParte(p)} disabled={buscandoId === p.id || !temToken}>
+                      onClick={() => buscarParte(p)} disabled={buscandoId === p.id || !temToken || !usuario.podeEditar}>
                       {buscandoId === p.id ? <Loader2 size={13} className="animate-spin mr-1" /> : <Search size={13} className="mr-1" />}
                       Buscar
                     </Button>
-                    <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>
+                    {usuario.podeEditar && <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>}
                   </div>
                 </div>
               ))}
-              <div className="flex items-center gap-2 p-2 bg-gray-50">
-                <Input className="h-8 text-xs flex-1" placeholder="Nome do advogado" value={procNome} onChange={e => setProcNome(e.target.value)} />
-                <Input className="h-8 text-xs w-32" placeholder="OAB (ex: 12345/RS)" value={procOab} onChange={e => setProcOab(e.target.value)} />
-                <Button size="sm" className="h-8 text-xs bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={addProcurador}><Plus size={13} className="mr-1" /> Adicionar</Button>
-              </div>
+              {usuario.podeEditar && (
+                <div className="flex items-center gap-2 p-2 bg-gray-50">
+                  <Input className="h-8 text-xs flex-1" placeholder="Nome do advogado" value={procNome} onChange={e => setProcNome(e.target.value)} />
+                  <Input className="h-8 text-xs w-32" placeholder="OAB (ex: 12345/RS)" value={procOab} onChange={e => setProcOab(e.target.value)} />
+                  <Button size="sm" className="h-8 text-xs bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={addProcurador}><Plus size={13} className="mr-1" /> Adicionar</Button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -360,20 +417,22 @@ export default function Monitoramento() {
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
-                      onClick={() => buscarParte(p)} disabled={buscandoId === p.id || !temToken}>
+                      onClick={() => buscarParte(p)} disabled={buscandoId === p.id || !temToken || !usuario.podeEditar}>
                       {buscandoId === p.id ? <Loader2 size={13} className="animate-spin mr-1" /> : <Search size={13} className="mr-1" />}
                       Buscar
                     </Button>
-                    <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>
+                    {usuario.podeEditar && <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>}
                   </div>
                 </div>
               ))}
               {clientesMonit.length === 0 && <p className="text-xs text-gray-400 py-3 text-center">Nenhum cliente cadastrado.</p>}
-              <div className="flex items-center gap-2 p-2 bg-gray-50">
-                <Input className="h-8 text-xs flex-1" placeholder="Nome do cliente (parte)" value={cliNome} onChange={e => setCliNome(e.target.value)} />
-                <Input className="h-8 text-xs w-36" placeholder="CPF/CNPJ (opcional)" value={cliDoc} onChange={e => setCliDoc(e.target.value)} />
-                <Button size="sm" className="h-8 text-xs bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={addCliente}><Plus size={13} className="mr-1" /> Adicionar</Button>
-              </div>
+              {usuario.podeEditar && (
+                <div className="flex items-center gap-2 p-2 bg-gray-50">
+                  <Input className="h-8 text-xs flex-1" placeholder="Nome do cliente (parte)" value={cliNome} onChange={e => setCliNome(e.target.value)} />
+                  <Input className="h-8 text-xs w-36" placeholder="CPF/CNPJ (opcional)" value={cliDoc} onChange={e => setCliDoc(e.target.value)} />
+                  <Button size="sm" className="h-8 text-xs bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={addCliente}><Plus size={13} className="mr-1" /> Adicionar</Button>
+                </div>
+              )}
             </div>
             <p className="text-[11px] text-gray-400 mt-2 flex items-center gap-1">
               <Scale size={11} /> Processos encontrados são cadastrados automaticamente e passam a ser monitorados pelo robô do DataJud (andamentos + publicações).

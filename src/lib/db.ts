@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import type {
   AppState, Cliente, Processo, Prazo, Publicacao, Peticao,
-  Advogado, Feriado, ConfigEscritorio, CredencialTribunal, Movimentacao,
+  Advogado, Feriado, ConfigEscritorio, CredencialTribunal, Movimentacao, Documento, AlertaArquivamento,
 } from '../types';
 import { INITIAL_STATE } from '../data';
 
@@ -59,7 +59,15 @@ function toMovimentacao(r: Record<string, unknown>): Movimentacao {
     data: r.data as string,
     tipo: r.tipo as string,
     descricao: r.descricao as string,
+    valor: (r.valor as number | null) ?? undefined,
   };
+}
+
+function mapPolo(v: unknown): Processo['polo'] {
+  const s = (v as string) ?? '';
+  if (s === 'ativo' || s === 'autor') return 'autor';
+  if (s === 'passivo' || s === 'réu' || s === 'reu') return 'réu';
+  return 'outro';
 }
 
 function toProcesso(r: Record<string, unknown>, movs: Movimentacao[] = []): Processo {
@@ -70,6 +78,7 @@ function toProcesso(r: Record<string, unknown>, movs: Movimentacao[] = []): Proc
     vara: r.vara as string,
     tribunal: r.tribunal as string,
     comarca: r.comarca as string,
+    uf: (r.uf as string) ?? '',
     area: r.area as Processo['area'],
     fase: r.fase as Processo['fase'],
     parteContraria: r.parte_contraria as string,
@@ -77,11 +86,18 @@ function toProcesso(r: Record<string, unknown>, movs: Movimentacao[] = []): Proc
     valorCausa: r.valor_causa as number | undefined,
     dataDistribuicao: (r.data_distribuicao as string) ?? '',
     status: r.status as Processo['status'],
-    polo: (r.polo as Processo['polo']) ?? 'outro',
+    polo: mapPolo(r.polo),
     objeto: (r.objeto as string) ?? '',
     arquivado: (r.arquivado as boolean) ?? false,
     movimentacoes: movs,
     observacoes: r.observacoes as string | undefined,
+    origem: (r.origem as Processo['origem']) ?? 'manual',
+    processoOrigemId: (r.processo_origem_id as string) ?? undefined,
+    sugestaoOrigemId: (r.sugestao_origem_id as string) ?? undefined,
+    imagemPath: (r.imagem_path as string) ?? undefined,
+    imagemNome: (r.imagem_nome as string) ?? undefined,
+    alertaArquivamento: (r.alerta_arquivamento as AlertaArquivamento) ?? undefined,
+    alertaNovo: (r.alerta_novo as boolean) ?? false,
     criadoEm: r.criado_em as string,
   };
 }
@@ -94,6 +110,7 @@ function fromProcesso(p: Processo) {
     vara: p.vara,
     tribunal: p.tribunal,
     comarca: p.comarca,
+    uf: p.uf ?? '',
     area: p.area,
     fase: p.fase,
     parte_contraria: p.parteContraria,
@@ -105,6 +122,11 @@ function fromProcesso(p: Processo) {
     objeto: p.objeto ?? '',
     arquivado: p.arquivado ?? false,
     observacoes: p.observacoes ?? null,
+    origem: p.origem ?? 'manual',
+    processo_origem_id: p.processoOrigemId ?? null,
+    sugestao_origem_id: p.sugestaoOrigemId ?? null,
+    imagem_path: p.imagemPath ?? null,
+    imagem_nome: p.imagemNome ?? null,
     criado_em: p.criadoEm,
   };
 }
@@ -123,6 +145,11 @@ function toPrazo(r: Record<string, unknown>): Prazo {
     criadoEm: r.criado_em as string,
     vistoEm: r.visto_em as string | undefined,
     vistoPor: r.visto_por as string | undefined,
+    agendadoPor: (r.agendado_por as string) || undefined,
+    cumpridoDeclaradoEm: r.cumprido_declarado_em as string | undefined,
+    cumpridoDeclaradoPor: r.cumprido_declarado_por as string | undefined,
+    aprovadoEm: r.aprovado_em as string | undefined,
+    aprovadoPor: r.aprovado_por as string | undefined,
   };
 }
 
@@ -139,6 +166,11 @@ function fromPrazo(p: Prazo) {
     alerta_dias: p.alertaDias,
     visto_em: p.vistoEm ?? null,
     visto_por: p.vistoPor ?? null,
+    agendado_por: p.agendadoPor ?? '',
+    cumprido_declarado_em: p.cumpridoDeclaradoEm ?? null,
+    cumprido_declarado_por: p.cumpridoDeclaradoPor ?? null,
+    aprovado_em: p.aprovadoEm ?? null,
+    aprovado_por: p.aprovadoPor ?? null,
     criado_em: p.criadoEm,
   };
 }
@@ -154,6 +186,8 @@ function toPublicacao(r: Record<string, unknown>): Publicacao {
     status: r.status as Publicacao['status'],
     tipo: (r.tipo as string) ?? '',
     link: (r.link as string) ?? '',
+    orgao: (r.orgao as string) ?? '',
+    partes: Array.isArray(r.partes) ? (r.partes as Publicacao['partes']) : [],
     criadoEm: r.criado_em as string,
   };
 }
@@ -169,6 +203,8 @@ function fromPublicacao(p: Publicacao) {
     status: p.status,
     tipo: p.tipo ?? '',
     link: p.link ?? '',
+    orgao: p.orgao ?? '',
+    partes: p.partes ?? [],
     criado_em: p.criadoEm,
   };
 }
@@ -211,29 +247,51 @@ function fromPeticao(p: Peticao) {
 
 // ─── load all ───────────────────────────────────────────────────────────────
 
+// Busca TODAS as linhas de uma tabela paginando de 1000 em 1000 (o PostgREST
+// limita cada resposta a 1000). Sem isto, tabelas grandes (ex.: movimentacoes)
+// vinham truncadas — andamentos sumiam do cadastro.
+async function fetchAll(
+  table: string,
+  orderCol: string,
+  ascending = true,
+): Promise<Record<string, unknown>[]> {
+  const PAGE = 1000;
+  const todas: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(table).select('*').order(orderCol, { ascending }).range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    todas.push(...(data as Record<string, unknown>[]));
+    if (data.length < PAGE) break;
+  }
+  return todas;
+}
+
 export async function loadState(): Promise<AppState> {
+  // TODAS as listas são paginadas (fetchAll) para suportar qualquer volume — sem o corte
+  // de 1000 linhas do PostgREST. Só o escritório é singleton (limit 1).
   const [
     { data: escritorioRows },
-    { data: advRows },
-    { data: cliRows },
-    { data: procRows },
-    { data: movRows },
-    { data: prazoRows },
-    { data: pubRows },
-    { data: petRows },
-    { data: ferRows },
-    { data: credRows },
+    advRows,
+    cliRows,
+    procRows,
+    prazoRows,
+    petRows,
+    ferRows,
+    credRows,
+    movRows,
+    pubRows,
   ] = await Promise.all([
     supabase.from('escritorio').select('*').limit(1),
-    supabase.from('advogados').select('*').order('nome'),
-    supabase.from('clientes').select('*').order('nome'),
-    supabase.from('processos').select('*').order('criado_em'),
-    supabase.from('movimentacoes').select('*').order('data'),
-    supabase.from('prazos').select('*').order('data_hora'),
-    supabase.from('publicacoes').select('*').order('data', { ascending: false }),
-    supabase.from('peticoes').select('*').order('criado_em'),
-    supabase.from('feriados_municipais').select('*').order('data'),
-    supabase.from('credenciais_tribunais').select('*'),
+    fetchAll('advogados', 'nome'),
+    fetchAll('clientes', 'nome'),
+    fetchAll('processos', 'criado_em'),
+    fetchAll('prazos', 'data_hora'),
+    fetchAll('peticoes', 'criado_em'),
+    fetchAll('feriados_municipais', 'data'),
+    fetchAll('credenciais_tribunais', 'tribunal'),
+    fetchAll('movimentacoes', 'data'),
+    fetchAll('publicacoes', 'data', false),
   ]);
 
   const movByProc: Record<string, Movimentacao[]> = {};
@@ -263,6 +321,8 @@ export async function loadState(): Promise<AppState> {
       nome: r.nome as string,
       oab: r.oab as string,
       email: r.email as string,
+      papel: (r.papel as Advogado['papel']) || 'advogado',
+      areas: Array.isArray(r.areas) ? (r.areas as Advogado['areas']) : [],
     })),
     clientes: (cliRows ?? []).map(r => toCliente(r as Record<string, unknown>)),
     processos: (procRows ?? []).map(r =>
@@ -308,6 +368,76 @@ export const db = {
   },
   deleteProcesso: (id: string) => supabase.from('processos').delete().eq('id', id),
 
+  // Alerta de arquivamento é coluna própria do servidor (setada por trigger); não passa pelo
+  // upsertProcesso (que não a inclui, para não sobrescrever). Resolvida por este update direto.
+  resolverAlertaArquivamento: (processoId: string, alerta: AlertaArquivamento | null) =>
+    supabase.from('processos').update({ alerta_arquivamento: alerta }).eq('id', processoId),
+
+  // Registro de auditoria: grava uma atividade do usuário (login, cadastro, edição, agendamento…).
+  registrarAtividade: (row: { usuario_email?: string | null; usuario_nome?: string | null; acao: string; entidade?: string | null; entidade_id?: string | null; descricao: string; detalhes?: unknown }) =>
+    supabase.from('jg_atividades').insert(row),
+  // Lê o relatório de atividades (só admin, por RLS).
+  listarAtividades: (limite = 800) =>
+    supabase.from('jg_atividades').select('*').order('criado_em', { ascending: false }).limit(limite),
+
+  // "Não é meu cliente": ignora o número (a captura para de trazer intimações dele) e arquiva as publicações existentes.
+  ignorarNumeroProcesso: (numeroLimpo: string, motivo?: string, por?: string) =>
+    supabase.from('jg_numeros_ignorados').upsert({ numero: numeroLimpo, motivo: motivo || null, criado_por: por || null }, { onConflict: 'numero' }),
+  arquivarPublicacoesDoNumero: (numeroMascara: string) =>
+    supabase.from('publicacoes').update({ status: 'arquivada' }).eq('numero_processo', numeroMascara),
+
+  // Marca um processo recém-capturado como revisado (some do alerta "novos capturados").
+  // Coluna própria do servidor (setada pela captura); fica fora do upsert, como o alerta de arquivamento.
+  marcarProcessoRevisado: (processoId: string) =>
+    supabase.from('processos').update({ alerta_novo: false }).eq('id', processoId),
+
+  // Sincroniza os andamentos de UM processo via DataJud — no SERVIDOR (o DataJud não tem
+  // CORS, então o navegador não pode chamá-lo direto; a edge function faz a ponte).
+  sincronizarProcessoDataJud: (body: { processoId?: string; numero?: string }) =>
+    supabase.functions.invoke<{ ok?: boolean; erro?: string; tribunal?: string; encontrado_no_datajud?: boolean; novos_andamentos?: number }>('sincronizar-processo', { body }),
+
+  // vínculo de origem (ex.: cumprimento de sentença muda o número)
+  confirmarOrigem: (id: string, origemId: string) =>
+    supabase.from('processos').update({ processo_origem_id: origemId, sugestao_origem_id: null }).eq('id', id),
+  descartarSugestaoOrigem: (id: string) =>
+    supabase.from('processos').update({ sugestao_origem_id: null }).eq('id', id),
+  vincularOrigem: (id: string, origemId: string | null) =>
+    supabase.from('processos').update({ processo_origem_id: origemId }).eq('id', id),
+
+  // print/imagem do processo (Storage bucket 'processos', privado)
+  uploadProcessoImagem: async (procId: string, base64: string, mime: string, nome: string) => {
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const ext = (nome.split('.').pop() || (mime.split('/')[1] ?? 'png')).toLowerCase();
+    const path = `${procId}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('processos').upload(path, bytes, { contentType: mime, upsert: true });
+    return { path: error ? '' : path, error };
+  },
+  signedUrlProcessoImagem: async (path: string) => {
+    const { data } = await supabase.storage.from('processos').createSignedUrl(path, 3600);
+    return data?.signedUrl ?? '';
+  },
+
+  // documentos anexados ao processo (defesas, contratos, provas…) — bucket 'processos', prefixo docs/
+  listarDocumentos: async (processoId: string): Promise<Documento[]> => {
+    const { data } = await supabase.from('documentos').select('*').eq('processo_id', processoId).order('criado_em');
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id as string, processoId: r.processo_id as string, nome: r.nome as string,
+      tipo: r.tipo as string, arquivoPath: r.arquivo_path as string,
+      arquivoNome: r.arquivo_nome as string, criadoEm: r.criado_em as string,
+    }));
+  },
+  uploadDocumento: async (processoId: string, file: File, tipo = 'documento') => {
+    const path = `docs/${processoId}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`;
+    const { error } = await supabase.storage.from('processos').upload(path, file, { upsert: false, contentType: file.type || undefined });
+    if (error) return { error };
+    return supabase.from('documentos').insert({ processo_id: processoId, nome: file.name, tipo, arquivo_path: path, arquivo_nome: file.name });
+  },
+  signedUrlDocumento: async (path: string) => {
+    const { data } = await supabase.storage.from('processos').createSignedUrl(path, 3600);
+    return data?.signedUrl ?? '';
+  },
+  deleteDocumento: (id: string) => supabase.from('documentos').delete().eq('id', id),
+
   // prazos
   upsertPrazo: (p: Prazo) => supabase.from('prazos').upsert(fromPrazo(p)),
   deletePrazo: (id: string) => supabase.from('prazos').delete().eq('id', id),
@@ -323,6 +453,10 @@ export const db = {
   // advogados
   upsertAdvogado: (a: Advogado) => supabase.from('advogados').upsert(a),
   deleteAdvogado: (id: string) => supabase.from('advogados').delete().eq('id', id),
+
+  // usuários de login (cria/atualiza conta de acesso + senha via edge function protegida, só admin)
+  gerenciarUsuario: (body: Record<string, unknown>) =>
+    supabase.functions.invoke<{ ok?: boolean; error?: string; jaExistia?: boolean; advogado?: unknown }>('jg-usuarios', { body }),
 
   // feriados
   upsertFeriado: (f: Feriado) => supabase.from('feriados_municipais').upsert(f),

@@ -14,9 +14,11 @@ import Relatorios from './components/Relatorios';
 import Monitoramento from './components/Monitoramento';
 import Configuracoes from './components/Configuracoes';
 import Ajuda from './components/Ajuda';
+import AtualizacaoApp from './components/AtualizacaoApp';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
-import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Bot, LogOut, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Users, Scale, Clock, Bell, FileText, BarChart2, Settings, Bot, LogOut, HelpCircle, Eye, AlertTriangle, Download, Sparkles, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 type Page = 'dashboard' | 'clientes' | 'processos' | 'prazos' | 'publicacoes' | 'peticoes' | 'relatorios' | 'monitoramento' | 'configuracoes' | 'ajuda';
 
@@ -34,8 +36,48 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ size?: nu
 ];
 
 function AppContent() {
-  const { state, loading } = useApp();
+  const { state, loading, usuario, reload } = useApp();
+  const [atualizando, setAtualizando] = useState(false);
+  const atualizarSistema = async () => {
+    if (atualizando) return;
+    setAtualizando(true);
+    try {
+      await reload();
+      // Verifica também se há versão nova do app publicada.
+      try { const r = await navigator.serviceWorker?.getRegistration(); r?.update(); } catch { /* */ }
+      toast.success('Sistema atualizado.');
+    } catch {
+      toast.error('Não foi possível atualizar agora. Verifique a conexão.');
+    } finally {
+      setAtualizando(false);
+    }
+  };
   const [page, setPage] = useState<Page>('prazos');
+
+  // Configurações é exclusiva do admin; se um não-admin cair nela, volta para a Agenda.
+  useEffect(() => {
+    if (page === 'configuracoes' && !usuario.isAdmin) setPage('prazos');
+  }, [page, usuario.isAdmin]);
+
+  // Instalação como app (PWA): captura o evento do Chrome e mostra o botão "Instalar app".
+  type PromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+  const [installEvt, setInstallEvt] = useState<PromptEvent | null>(null);
+  useEffect(() => {
+    const onBip = (e: Event) => { e.preventDefault(); setInstallEvt(e as PromptEvent); };
+    const onInstalled = () => setInstallEvt(null);
+    window.addEventListener('beforeinstallprompt', onBip);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBip);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+  const instalarApp = async () => {
+    if (!installEvt) return;
+    await installEvt.prompt();
+    try { await installEvt.userChoice; } catch { /* ignora */ }
+    setInstallEvt(null);
+  };
 
   if (loading) {
     return (
@@ -48,8 +90,14 @@ function AppContent() {
     );
   }
 
-  const naoLidas = state.publicacoes.filter(p => p.status === 'não_lida').length;
-  const prazosUrgentes = state.prazos.filter(p => p.status === 'pendente' && diasRestantes(p.dataHora) <= 3 && diasRestantes(p.dataHora) >= 0).length;
+  // Escopo do perfil: publicações/prazos pela área do processo vinculado; além disso,
+  // o advogado sempre vê as tarefas em que é responsável (ou que agendou), mesmo fora da área.
+  const areaDoProc = (processoId?: string) => usuario.emArea(state.processos.find(x => x.id === processoId)?.area);
+  const naoLidas = state.publicacoes.filter(p => p.status === 'não_lida' && (!p.processoId || areaDoProc(p.processoId))).length;
+  const prazosUrgentes = state.prazos.filter(p => p.status === 'pendente' && diasRestantes(p.dataHora) <= 3 && diasRestantes(p.dataHora) >= 0
+    && ((!p.processoId || areaDoProc(p.processoId)) || p.responsavel === usuario.nome || p.agendadoPor === usuario.nome)).length;
+  const alertasArquiv = state.processos.filter(p => p.alertaArquivamento?.ativo && !p.arquivado && usuario.emArea(p.area)).length;
+  const novosCapturados = state.processos.filter(p => p.alertaNovo && !p.arquivado && usuario.emArea(p.area)).length;
 
   const badges: Partial<Record<Page, number>> = {
     publicacoes: naoLidas || undefined,
@@ -57,6 +105,9 @@ function AppContent() {
   } as Partial<Record<Page, number>>;
 
   const navigate = (p: Page) => { setPage(p); window.scrollTo({ top: 0 }); };
+
+  // Configurações só aparece para admin
+  const visibleNav = navItems.filter(it => it.id !== 'configuracoes' || usuario.isAdmin);
 
   const pageComponents: Record<Page, React.ReactNode> = {
     dashboard: <Dashboard />, clientes: <Clientes />, processos: <Processos />,
@@ -80,9 +131,27 @@ function AppContent() {
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <button onClick={atualizarSistema} disabled={atualizando} title="Atualizar o sistema (recarrega os dados e busca novidades)" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-2.5 py-1 text-xs text-white transition-colors disabled:opacity-60">
+              <RefreshCw size={13} className={atualizando ? 'animate-spin' : ''} /><span className="hidden sm:inline">{atualizando ? 'Atualizando…' : 'Atualizar'}</span>
+            </button>
+            {installEvt && (
+              <button onClick={instalarApp} title="Instalar o JurisGest como aplicativo independente" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-2.5 py-1 text-xs text-white transition-colors">
+                <Download size={12} /><span className="hidden sm:inline">Instalar app</span>
+              </button>
+            )}
             {prazosUrgentes > 0 && (
               <button onClick={() => navigate('prazos')} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-2.5 py-1 text-xs text-white transition-colors">
                 <Clock size={12} /><span className="hidden sm:inline">{prazosUrgentes} urgente(s)</span><span className="sm:hidden">{prazosUrgentes}</span>
+              </button>
+            )}
+            {alertasArquiv > 0 && (
+              <button onClick={() => navigate('processos')} title="Processos com alerta de baixa/arquivamento" className="flex items-center gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/40 rounded-full px-2.5 py-1 text-xs text-amber-100 transition-colors">
+                <AlertTriangle size={12} /><span className="hidden sm:inline">{alertasArquiv} alerta(s)</span><span className="sm:hidden">{alertasArquiv}</span>
+              </button>
+            )}
+            {novosCapturados > 0 && (
+              <button onClick={() => navigate('processos')} title="Processos novos capturados automaticamente — revisar" className="flex items-center gap-1.5 bg-blue-400/20 hover:bg-blue-400/30 border border-blue-300/40 rounded-full px-2.5 py-1 text-xs text-blue-50 transition-colors">
+                <Sparkles size={12} /><span className="hidden sm:inline">{novosCapturados} novo(s)</span><span className="sm:hidden">{novosCapturados}</span>
               </button>
             )}
             {naoLidas > 0 && (
@@ -91,14 +160,27 @@ function AppContent() {
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">{naoLidas}</span>
               </button>
             )}
-            <button onClick={() => supabase.auth.signOut()} className="flex items-center gap-1.5 text-xs text-blue-100 hover:text-white hover:bg-white/10 rounded px-2 py-1.5 transition-colors">
+            <div className="hidden sm:flex flex-col items-end leading-tight mr-1">
+              <span className="text-xs text-white/90 truncate max-w-[170px]">{usuario.nome}</span>
+              {usuario.papel === 'visualizador' ? (
+                <span className="text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 rounded px-1.5 py-0.5 flex items-center gap-1 mt-0.5"><Eye size={10} /> Somente leitura</span>
+              ) : usuario.papel === 'advogado' ? (
+                <span className="text-[10px] text-blue-200">Advogado{usuario.areas.length ? ` · ${usuario.areas.length} área${usuario.areas.length > 1 ? 's' : ''}` : ''}</span>
+              ) : (
+                <span className="text-[10px] text-blue-200">Administrador</span>
+              )}
+            </div>
+            {usuario.papel === 'visualizador' && (
+              <span className="sm:hidden text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 rounded px-1.5 py-0.5 flex items-center gap-1"><Eye size={10} /></span>
+            )}
+            <button onClick={() => { try { sessionStorage.removeItem('jg_login_logged'); } catch { /* */ } supabase.auth.signOut(); }} className="flex items-center gap-1.5 text-xs text-blue-100 hover:text-white hover:bg-white/10 rounded px-2 py-1.5 transition-colors">
               <LogOut size={14} /><span className="hidden sm:inline">Sair</span>
             </button>
           </div>
         </div>
         {/* Menu horizontal */}
         <nav className="flex items-stretch px-2 overflow-x-auto border-t border-white/10 no-scrollbar">
-          {navItems.map(item => {
+          {visibleNav.map(item => {
             const Icon = item.icon;
             const badge = badges[item.id];
             const active = page === item.id;
@@ -156,6 +238,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthGate />
+      <AtualizacaoApp />
     </ErrorBoundary>
   );
 }

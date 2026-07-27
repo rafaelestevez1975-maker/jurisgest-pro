@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp, genId } from '../context';
-import { Cliente } from '../types';
+import type { Cliente, Processo, AreaDireito } from '../types';
+import { ProcessoDetalheDialog } from './Processos';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -10,8 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, User, Building2, Phone, Mail, MapPin, FileText } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, User, Building2, Phone, Mail, MapPin, FileText, Scale, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+
+const AREAS_CLI: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','procon','outro'];
 
 const emptyCliente = (): Omit<Cliente, 'id' | 'criadoEm'> => ({
   nome: '', tipo: 'PF', cpfCnpj: '', rg: '', email: '', telefone: '', celular: '',
@@ -205,7 +208,7 @@ function ImportCSV({ onImport, onClose }: { onImport: (clientes: Omit<Cliente, '
 }
 
 export default function Clientes() {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, usuario } = useApp();
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -214,10 +217,16 @@ export default function Clientes() {
   const [searchBy, setSearchBy] = useState<'cliente' | 'adverso' | 'numero'>('cliente');
   const [editCliente, setEditCliente] = useState<Cliente | null>(null);
   const [viewCliente, setViewCliente] = useState<Cliente | null>(null);
+  const [viewProcesso, setViewProcesso] = useState<Processo | null>(null);
+  const [procSearch, setProcSearch] = useState('');
+  const [procArea, setProcArea] = useState('todas');
+
+  const abrirCliente = (c: Cliente) => { setViewCliente(c); setProcSearch(''); setProcArea('todas'); };
 
   const termo = search.trim().toLowerCase();
   const filtered = state.clientes.filter(c => {
     if (mostrarArquivados ? !c.arquivado : !!c.arquivado) return false;
+    if (usuario.areasVisiveis !== null && !state.processos.some(p => p.clienteId === c.id && usuario.emArea(p.area))) return false;
     if (!termo) return true;
     const procsCliente = state.processos.filter(p => p.clienteId === c.id);
     if (searchBy === 'adverso') return procsCliente.some(p => p.parteContraria.toLowerCase().includes(termo));
@@ -257,7 +266,7 @@ export default function Clientes() {
     toast.success(`${novos.length} clientes importados!`);
   };
 
-  const processosDoCliente = (clienteId: string) => state.processos.filter(p => p.clienteId === clienteId);
+  const processosDoCliente = (clienteId: string) => state.processos.filter(p => p.clienteId === clienteId && usuario.emArea(p.area));
 
   return (
     <div className="space-y-5">
@@ -268,14 +277,16 @@ export default function Clientes() {
             {state.clientes.length - arquivadosCount} ativo(s){arquivadosCount > 0 && ` · ${arquivadosCount} arquivado(s)`}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}>
-            <Upload size={14} className="mr-1" /> Importar CSV
-          </Button>
-          <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditCliente(null); setDialogOpen(true); }}>
-            <Plus size={14} className="mr-1" /> Novo Cliente
-          </Button>
-        </div>
+        {usuario.podeEditar && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}>
+              <Upload size={14} className="mr-1" /> Importar CSV
+            </Button>
+            <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditCliente(null); setDialogOpen(true); }}>
+              <Plus size={14} className="mr-1" /> Novo Cliente
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card>
@@ -325,7 +336,7 @@ export default function Clientes() {
                   {filtered.map(cliente => {
                     const procs = processosDoCliente(cliente.id);
                     return (
-                      <tr key={cliente.id} className={`border-t hover:bg-blue-50/40 cursor-pointer ${cliente.arquivado ? 'opacity-60' : ''}`} onClick={() => setViewCliente(cliente)}>
+                      <tr key={cliente.id} className={`border-t hover:bg-blue-50/40 cursor-pointer ${cliente.arquivado ? 'opacity-60' : ''}`} onClick={() => abrirCliente(cliente)}>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
                             {cliente.tipo === 'PF' ? <User size={14} className="text-[#2563eb] flex-shrink-0" /> : <Building2 size={14} className="text-[#2563eb] flex-shrink-0" />}
@@ -344,10 +355,12 @@ export default function Clientes() {
                           <Badge className="bg-blue-100 text-blue-700 text-[10px] px-1.5"><FileText size={9} className="mr-0.5" />{procs.length}</Badge>
                         </td>
                         <td className="px-4 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Editar" onClick={() => { setEditCliente(cliente); setDialogOpen(true); }}><Edit size={13} /></Button>
-                          {cliente.arquivado
-                            ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => handleRestaurar(cliente)}><ArchiveRestore size={13} /></Button>
-                            : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(cliente.id)}><Archive size={13} /></Button>}
+                          {usuario.podeEditar && (<>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Editar" onClick={() => { setEditCliente(cliente); setDialogOpen(true); }}><Edit size={13} /></Button>
+                            {cliente.arquivado
+                              ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => handleRestaurar(cliente)}><ArchiveRestore size={13} /></Button>
+                              : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(cliente.id)}><Archive size={13} /></Button>}
+                          </>)}
                         </td>
                       </tr>
                     );
@@ -375,48 +388,110 @@ export default function Clientes() {
 
       {/* Dialog Visualizar */}
       <Dialog open={!!viewCliente} onOpenChange={() => setViewCliente(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-5xl w-[95vw]">
           <DialogHeader>
             <DialogTitle className="text-[#1e3a5f]">Ficha do Cliente</DialogTitle>
           </DialogHeader>
           {viewCliente && (
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="space-y-4 max-h-[82vh] overflow-y-auto pr-1">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                   {viewCliente.tipo === 'PF' ? <User size={20} className="text-[#2563eb]" /> : <Building2 size={20} className="text-[#2563eb]" />}
                 </div>
-                <div>
-                  <p className="font-bold text-[#1e3a5f]">{viewCliente.nome}</p>
+                <div className="min-w-0">
+                  <p className="font-bold text-[#1e3a5f] text-lg truncate">{viewCliente.nome}</p>
                   <p className="text-xs text-gray-500">{viewCliente.cpfCnpj} · {viewCliente.tipo === 'PF' ? 'Pessoa Física' : 'Pessoa Jurídica'}</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-gray-400">Email:</span> <span className="font-medium">{viewCliente.email}</span></div>
-                <div><span className="text-gray-400">Celular:</span> <span className="font-medium">{viewCliente.celular}</span></div>
-                {viewCliente.telefone && <div><span className="text-gray-400">Tel:</span> <span className="font-medium">{viewCliente.telefone}</span></div>}
-                {viewCliente.rg && <div><span className="text-gray-400">RG:</span> <span className="font-medium">{viewCliente.rg}</span></div>}
-                {viewCliente.logradouro && <div className="col-span-2"><span className="text-gray-400">Endereço:</span> <span className="font-medium">{viewCliente.logradouro}, {viewCliente.numero} - {viewCliente.bairro}, {viewCliente.cidade}/{viewCliente.uf}</span></div>}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                {([
+                  ['E-mail', viewCliente.email],
+                  ['Celular', viewCliente.celular],
+                  ['Telefone', viewCliente.telefone],
+                  ['CPF / CNPJ', viewCliente.cpfCnpj],
+                  ['RG', viewCliente.rg],
+                  ['CEP', viewCliente.cep],
+                ] as [string, string | undefined][]).map(([k, v]) => (
+                  <div key={k} className="bg-gray-50 rounded p-2 min-w-0">
+                    <p className="text-gray-400 text-[10px] uppercase">{k}</p>
+                    <p className="font-medium mt-0.5 break-words">{v || '—'}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="bg-gray-50 rounded p-2 text-xs">
+                <p className="text-gray-400 text-[10px] uppercase">Endereço</p>
+                <p className="font-medium mt-0.5 break-words">{[viewCliente.logradouro, viewCliente.numero, viewCliente.complemento, viewCliente.bairro, viewCliente.cidade && `${viewCliente.cidade}${viewCliente.uf ? '/' + viewCliente.uf : ''}`].filter(Boolean).join(', ') || '—'}</p>
               </div>
               {viewCliente.observacoes && (
-                <div className="bg-gray-50 rounded p-3 text-xs text-gray-600">{viewCliente.observacoes}</div>
+                <div className="bg-yellow-50 border border-yellow-100 rounded p-3 text-xs text-gray-600 whitespace-pre-wrap">{viewCliente.observacoes}</div>
               )}
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Processos ({processosDoCliente(viewCliente.id).length})</p>
-                {processosDoCliente(viewCliente.id).length === 0
-                  ? <p className="text-xs text-gray-400">Nenhum processo vinculado.</p>
-                  : processosDoCliente(viewCliente.id).map(proc => (
-                    <div key={proc.id} className="flex items-center justify-between border rounded p-2 mb-1.5 text-xs">
-                      <span className="font-mono text-[11px] truncate flex-1">{proc.numero}</span>
-                      <span className="ml-2 text-gray-500 capitalize">{proc.area}</span>
-                      <Badge variant="outline" className="ml-2 text-[10px] capitalize">{proc.status}</Badge>
-                    </div>
-                  ))
-                }
-              </div>
+              {(() => {
+                const t = procSearch.trim().toLowerCase();
+                const todos = processosDoCliente(viewCliente.id);
+                const procs = todos.filter(p => {
+                  if (procArea !== 'todas' && p.area !== procArea) return false;
+                  if (!t) return true;
+                  return p.numero.toLowerCase().includes(t) || p.parteContraria.toLowerCase().includes(t);
+                });
+                const filtrando = procArea !== 'todas' || !!t;
+                return (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Processos ({filtrando ? `${procs.length} de ${todos.length}` : todos.length})</p>
+                    {todos.length > 0 && (
+                      <div className="flex gap-2 mb-2 flex-wrap">
+                        <div className="relative flex-1 min-w-40">
+                          <Search size={13} className="absolute left-2.5 top-2 text-gray-400" />
+                          <Input className="pl-7 h-8 text-xs" placeholder="Nº do processo ou parte adversa…" value={procSearch} onChange={e => setProcSearch(e.target.value)} />
+                        </div>
+                        <Select value={procArea} onValueChange={setProcArea}>
+                          <SelectTrigger className="h-8 text-xs w-36"><SelectValue placeholder="Área" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todas">Todas as áreas</SelectItem>
+                            {AREAS_CLI.map(a => <SelectItem key={a} value={a} className="capitalize">{a}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {todos.length === 0
+                      ? <p className="text-xs text-gray-400">Nenhum processo vinculado.</p>
+                      : procs.length === 0
+                        ? <p className="text-xs text-gray-400">Nenhum processo com esse filtro.</p>
+                        : <div className="grid sm:grid-cols-2 gap-2">{procs.map(proc => (
+                          <button key={proc.id} onClick={() => setViewProcesso(proc)}
+                            className="w-full border rounded-lg p-3 text-left hover:bg-blue-50 hover:border-blue-200 transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex items-start gap-2 flex-1">
+                                <span className="w-7 h-7 rounded bg-[#1e3a5f] flex items-center justify-center flex-shrink-0 mt-0.5"><Scale size={13} className="text-white" /></span>
+                                <div className="min-w-0">
+                                  <p className="font-mono text-[11px] font-semibold text-[#1e3a5f] truncate">{proc.numero}</p>
+                                  <p className="text-xs mt-0.5 break-words">
+                                    <span className="text-gray-400">{proc.polo === 'autor' ? 'Autor' : proc.polo === 'réu' ? 'Réu' : 'Parte'} × </span>
+                                    <span className={proc.parteContraria ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{proc.parteContraria || 'parte adversa não informada'}</span>
+                                  </p>
+                                  <div className="flex items-center gap-1.5 mt-1 flex-wrap text-[10px] text-gray-500">
+                                    <Badge variant="outline" className="text-[10px] capitalize">{proc.area}</Badge>
+                                    {proc.tribunal && <span>{proc.tribunal}{proc.comarca ? ` · ${proc.comarca}` : ''}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <Badge variant="outline" className="text-[10px] capitalize">{proc.status}</Badge>
+                                <ChevronRight size={13} className="text-gray-400" />
+                              </div>
+                            </div>
+                          </button>
+                        ))}</div>
+                    }
+                  </div>
+                );
+              })()}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Dialog detalhe do processo (aberto a partir do cliente) */}
+      <ProcessoDetalheDialog processo={viewProcesso} onClose={() => setViewProcesso(null)} />
 
       {/* Dialog Importar */}
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
