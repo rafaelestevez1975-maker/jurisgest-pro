@@ -2,6 +2,7 @@ import { useApp } from '../context';
 import type { Processo } from '../types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Scale } from 'lucide-react';
+import { CopiarNumero } from './CopiarNumero';
 
 // Diálogo reutilizável: mostra os dados e os andamentos de um processo.
 // Aberto ao clicar no número do processo (na Agenda, nas Publicações, etc.).
@@ -14,6 +15,7 @@ export default function ProcessoAndamentosDialog({ processo, onClose }: { proces
           <DialogTitle className="text-[#1e3a5f] flex items-center gap-2">
             <Scale size={16} className="text-blue-500" />
             <span className="font-mono text-sm">{processo?.numero}</span>
+            <CopiarNumero numero={processo?.numero} size={13} />
           </DialogTitle>
         </DialogHeader>
         {processo && (() => {

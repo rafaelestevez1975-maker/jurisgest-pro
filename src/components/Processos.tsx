@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus, Bot, Link2, GitMerge, Download, Check, ChevronsUpDown, Sparkles, CheckCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { CopiarNumero } from './CopiarNumero';
 
 const AREAS: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','procon','outro'];
 const FASES: FaseProcessual[] = ['conhecimento','recursal','execução','outro'];
@@ -1233,7 +1234,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
     <div className="max-h-[82vh] overflow-y-auto pr-1">
       <div className="flex items-start justify-between mb-4 gap-2">
         <div className="min-w-0">
-          <p className="font-mono text-sm font-bold text-[#1e3a5f] truncate">{processo.numero}</p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="font-mono text-sm font-bold text-[#1e3a5f] truncate">{processo.numero}</p>
+            <CopiarNumero numero={processo.numero} size={13} />
+          </div>
           <p className="text-xs text-gray-500 mt-0.5 truncate">{processo.tribunal}{processo.comarca ? ` · ${processo.comarca}` : ''}{processo.uf ? `/${processo.uf}` : ''}</p>
           <p className="text-sm text-gray-800 mt-1 break-words">
             <span className="font-medium">{cliente?.nome || '—'}</span>
@@ -2127,7 +2131,10 @@ export default function Processos() {
                       <Scale size={14} className="text-white" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-mono text-xs font-bold text-[#1e3a5f] truncate">{proc.numero}</p>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <p className="font-mono text-xs font-bold text-[#1e3a5f] truncate">{proc.numero}</p>
+                        <CopiarNumero numero={proc.numero} size={11} />
+                      </div>
                       <p className="text-sm font-medium text-gray-800 mt-0.5">{cliente?.nome || '—'} <span className="text-gray-400">vs</span> {proc.parteContraria || '—'}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="text-xs text-gray-500">{proc.tribunal}{proc.comarca ? ` · ${proc.comarca}` : ''}</span>

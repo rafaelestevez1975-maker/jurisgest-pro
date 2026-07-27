@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp, genId } from '../context';
 import type { Cliente, Processo, AreaDireito } from '../types';
 import { ProcessoDetalheDialog } from './Processos';
+import { CopiarNumero } from './CopiarNumero';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -463,7 +464,10 @@ export default function Clientes() {
                               <div className="min-w-0 flex items-start gap-2 flex-1">
                                 <span className="w-7 h-7 rounded bg-[#1e3a5f] flex items-center justify-center flex-shrink-0 mt-0.5"><Scale size={13} className="text-white" /></span>
                                 <div className="min-w-0">
-                                  <p className="font-mono text-[11px] font-semibold text-[#1e3a5f] truncate">{proc.numero}</p>
+                                  <div className="flex items-center gap-1 min-w-0">
+                                    <p className="font-mono text-[11px] font-semibold text-[#1e3a5f] truncate">{proc.numero}</p>
+                                    <CopiarNumero numero={proc.numero} size={10} />
+                                  </div>
                                   <p className="text-xs mt-0.5 break-words">
                                     <span className="text-gray-400">{proc.polo === 'autor' ? 'Autor' : proc.polo === 'réu' ? 'Réu' : 'Parte'} × </span>
                                     <span className={proc.parteContraria ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{proc.parteContraria || 'parte adversa não informada'}</span>

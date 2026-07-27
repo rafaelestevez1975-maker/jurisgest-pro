@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { BarChart2, Download, Printer, Filter, X, ChevronDown, Scale, Clock } from 'lucide-react';
 import { TIPOS_ANDAMENTO, ProcessoDetalheDialog } from './Processos';
+import { CopiarNumero } from './CopiarNumero';
 
 const AREAS: AreaDireito[] = ['cível', 'trabalhista', 'criminal', 'previdenciário', 'família', 'tributário', 'empresarial', 'administrativo', 'procon', 'outro'];
 const STATUS_LIST: StatusProcesso[] = ['ativo', 'suspenso', 'arquivado', 'ganho', 'perdido', 'acordo'];
@@ -464,6 +465,7 @@ export default function Relatorios() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="w-7 h-7 rounded bg-[#1e3a5f] flex items-center justify-center flex-shrink-0"><Scale size={13} className="text-white" /></span>
                       <button onClick={() => setVerProc(p)} title="Abrir o processo" className="font-mono text-xs font-bold text-[#1e3a5f] hover:underline">{p.numero}</button>
+                      <CopiarNumero numero={p.numero} size={12} />
                       <Badge className={`${statusColor[p.status]} text-[10px] capitalize`}>{p.status}</Badge>
                       <Badge variant="outline" className="text-[10px] capitalize">{p.area}</Badge>
                       {p.tribunal && <span className="text-[11px] text-gray-500">{p.tribunal}{p.comarca ? ` · ${p.comarca}` : ''}</span>}

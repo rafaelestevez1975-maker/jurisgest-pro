@@ -3,6 +3,7 @@ import { useApp, genId } from '../context';
 import { supabase } from '../lib/supabase';
 import type { Peticao, TipoPeticao, StatusPeticao, Processo } from '../types';
 import { ProcessoDetalheDialog } from './Processos';
+import { CopiarNumero } from './CopiarNumero';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -497,7 +498,7 @@ export default function Peticoes() {
                       <p className="font-semibold text-sm text-[#1e3a5f]">{pet.nome}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-gray-500">
                         {proc
-                          ? <button onClick={() => setVerProc(proc)} title="Abrir o processo" className="font-mono truncate max-w-48 text-[#2563eb] hover:underline">{proc.numero.slice(0,20)}...</button>
+                          ? <span className="inline-flex items-center gap-1 min-w-0"><button onClick={() => setVerProc(proc)} title="Abrir o processo" className="font-mono truncate max-w-48 text-[#2563eb] hover:underline">{proc.numero.slice(0,20)}...</button><CopiarNumero numero={proc.numero} size={11} /></span>
                           : <span className="font-mono truncate max-w-48 text-gray-400">— sem processo</span>}
                         {cli && <span>· {cli.nome.split(' ')[0]}</span>}
                         {pet.dataProtocolo && <span>· {pet.dataProtocolo}</span>}

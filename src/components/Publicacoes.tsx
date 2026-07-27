@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { adicionarDiasUteis } from '../data';
 import type { Publicacao, Processo, StatusPublicacao, Movimentacao, TipoPrazo } from '../types';
 import { TIPOS_ANDAMENTO, ProcessoDetalheDialog } from './Processos';
+import { CopiarNumero } from './CopiarNumero';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -619,13 +620,19 @@ export default function Publicacoes() {
                               <div className="text-xs">{cli.nome} <span className="text-gray-400 font-normal">×</span> {proc?.parteContraria || '—'}</div>
                             ) : <div className="text-[11px] text-amber-600 font-normal">Não vinculada</div>}
                             {proc ? (
-                              <button onClick={e => { e.stopPropagation(); setAndamentosProc(proc); }}
-                                title="Ver andamentos do processo"
-                                className="text-[11px] font-mono text-blue-600 hover:underline font-normal flex items-center gap-1">
-                                {pub.numeroProcesso || proc.numero} <ExternalLink size={9} className="flex-shrink-0" />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button onClick={e => { e.stopPropagation(); setAndamentosProc(proc); }}
+                                  title="Ver andamentos do processo"
+                                  className="text-[11px] font-mono text-blue-600 hover:underline font-normal flex items-center gap-1 min-w-0">
+                                  <span className="truncate">{pub.numeroProcesso || proc.numero}</span> <ExternalLink size={9} className="flex-shrink-0" />
+                                </button>
+                                <CopiarNumero numero={pub.numeroProcesso || proc.numero} size={11} />
+                              </div>
                             ) : (
-                              <div className="text-[11px] font-mono text-gray-500 font-normal">{pub.numeroProcesso || '—'}</div>
+                              <div className="flex items-center gap-1">
+                                <div className="text-[11px] font-mono text-gray-500 font-normal">{pub.numeroProcesso || '—'}</div>
+                                <CopiarNumero numero={pub.numeroProcesso} size={11} />
+                              </div>
                             )}
                           </td>
                           <td className="px-3 py-2.5 align-top">
@@ -712,6 +719,7 @@ export default function Publicacoes() {
                   ) : (
                     <span className="font-mono text-gray-600">{viewPub.numeroProcesso || 'Sem número'}</span>
                   )}
+                  <CopiarNumero numero={viewPub.numeroProcesso || proc?.numero} size={12} />
                   <Badge className={`${statusColor[viewPub.status]} text-[10px] px-1.5`}>{statusLabel[viewPub.status]}</Badge>
                   {proc && <span className="text-blue-600">↳ vinculado</span>}
                 </div>

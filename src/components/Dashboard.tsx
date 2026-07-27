@@ -3,6 +3,7 @@ import { useApp } from '../context';
 import { diasRestantes } from '../data';
 import type { Processo } from '../types';
 import { ProcessoDetalheDialog } from './Processos';
+import { CopiarNumero } from './CopiarNumero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Users, Briefcase, Clock, Bell, AlertTriangle, CheckCircle, TrendingUp, Scale, Activity, DollarSign } from 'lucide-react';
@@ -186,7 +187,10 @@ export default function Dashboard() {
                     <div key={prazo.id} onClick={() => proc && abrirProc(proc.id)} title={proc ? 'Abrir o processo' : undefined} className={`flex items-center justify-between px-4 py-3 ${urgencyColor(dias)} ${proc ? 'cursor-pointer hover:brightness-95' : ''}`}>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{prazo.descricao}</p>
-                        <p className="text-xs opacity-70">{proc?.numero?.slice(0, 20)}... · {prazo.responsavel.split(' ')[1] || prazo.responsavel}</p>
+                        <div className="text-xs opacity-70 flex items-center gap-1 min-w-0">
+                          {proc?.numero && (<><span className="font-mono truncate">{proc.numero}</span><CopiarNumero numero={proc.numero} size={10} /><span className="flex-shrink-0">·</span></>)}
+                          <span className="truncate">{prazo.responsavel.split(' ')[1] || prazo.responsavel}</span>
+                        </div>
                       </div>
                       <div className="ml-3 flex-shrink-0">{urgencyBadge(dias)}</div>
                     </div>
@@ -263,7 +267,7 @@ export default function Dashboard() {
                     <span className="text-[11px] font-mono text-gray-400 flex-shrink-0 mt-0.5">{fmtData(m.data)}</span>
                     <div className="min-w-0">
                       <p className="text-xs text-gray-700 truncate">{m.descricao}</p>
-                      <p className="text-[10px] font-mono text-blue-600 truncate">{m.numero}</p>
+                      <span className="text-[10px] font-mono text-blue-600 inline-flex items-center gap-1 max-w-full"><span className="truncate">{m.numero}</span><CopiarNumero numero={m.numero} size={10} /></span>
                     </div>
                   </div>
                 ))}
@@ -292,7 +296,7 @@ export default function Dashboard() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-[#2563eb]">{pub.tribunal}</span>
-                        <span className="text-xs text-gray-500">{pub.numeroProcesso}</span>
+                        <span className="text-xs text-gray-500 inline-flex items-center gap-1">{pub.numeroProcesso}<CopiarNumero numero={pub.numeroProcesso} size={10} /></span>
                         <span className="text-xs text-gray-400">{pub.data}</span>
                         {pub.status === 'não_lida' && <Badge className="bg-red-500 text-white text-[10px] px-1 py-0">Não lida</Badge>}
                       </div>

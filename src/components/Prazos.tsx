@@ -10,11 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Plus, CheckCircle, XCircle, AlertTriangle, Clock, Eye, EyeOff, Scale, ExternalLink, ChevronDown, Search, X, Copy } from 'lucide-react';
+import { Plus, CheckCircle, XCircle, AlertTriangle, Clock, Eye, EyeOff, Scale, ExternalLink, ChevronDown, Search, X } from 'lucide-react';
 import { diasRestantes } from '../data';
 import { ProcessoDetalheDialog } from './Processos';
 import { MultiSelect } from './Relatorios';
 import { toast } from 'sonner';
+import { CopiarNumero } from './CopiarNumero';
 
 const TIPOS: TipoPrazo[] = ['audiência','prazo_fatal','prazo_dilatório','diligência','reunião','outro'];
 const STATUS_PRAZO: StatusPrazo[] = ['pendente','cumprido','cancelado'];
@@ -162,9 +163,13 @@ function PrazoForm({ initial, onSave, onCancel }: {
           {form.processoId && (() => {
             const proc = state.processos.find(p => p.id === form.processoId);
             return proc ? (
-              <button type="button" onClick={() => setVerProc(proc)} className="text-[11px] text-blue-600 hover:underline mt-1 inline-flex items-center gap-1">
-                <ExternalLink size={10} /> Abrir processo — ver andamentos e ações
-              </button>
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                <span className="font-mono text-[11px] text-[#1e3a5f]">{proc.numero}</span>
+                <CopiarNumero numero={proc.numero} size={11} />
+                <button type="button" onClick={() => setVerProc(proc)} className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1">
+                  <ExternalLink size={10} /> Abrir processo — ver andamentos e ações
+                </button>
+              </div>
             ) : null;
           })()}
         </div>
@@ -557,13 +562,7 @@ export default function Prazos() {
                             <span className="truncate">{proc.numero}</span>
                             <ExternalLink size={9} className="flex-shrink-0" />
                           </button>
-                          <button
-                            title="Copiar número do processo"
-                            className="text-gray-400 hover:text-[#1e3a5f] flex-shrink-0"
-                            onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(proc.numero).then(() => toast.success('Número copiado.')).catch(() => toast.error('Não foi possível copiar.')); }}
-                          >
-                            <Copy size={11} />
-                          </button>
+                          <CopiarNumero numero={proc.numero} size={11} />
                         </div>
                       ) : (
                         <p className="text-xs text-gray-400 mt-0.5 italic">Sem processo vinculado</p>
