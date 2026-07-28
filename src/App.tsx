@@ -13,6 +13,7 @@ import Peticoes from './components/Peticoes';
 import Relatorios from './components/Relatorios';
 import Monitoramento from './components/Monitoramento';
 import Configuracoes from './components/Configuracoes';
+import { NotificacoesBell } from './components/NotificacoesBell';
 import Ajuda from './components/Ajuda';
 import AtualizacaoApp from './components/AtualizacaoApp';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -155,15 +156,18 @@ function AppContent() {
               </button>
             )}
             {naoLidas > 0 && (
-              <button onClick={() => navigate('publicacoes')} className="relative text-blue-100 hover:text-white transition-colors">
+              <button onClick={() => navigate('publicacoes')} title="Publicações não lidas" className="relative text-blue-100 hover:text-white transition-colors">
                 <Bell size={18} />
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">{naoLidas}</span>
               </button>
             )}
+            <NotificacoesBell />
             <div className="hidden sm:flex flex-col items-end leading-tight mr-1">
               <span className="text-xs text-white/90 truncate max-w-[170px]">{usuario.nome}</span>
               {usuario.papel === 'visualizador' ? (
                 <span className="text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 rounded px-1.5 py-0.5 flex items-center gap-1 mt-0.5"><Eye size={10} /> Somente leitura</span>
+              ) : usuario.papel === 'operacao' ? (
+                <span className="text-[10px] bg-emerald-400/20 text-emerald-50 border border-emerald-300/40 rounded px-1.5 py-0.5 mt-0.5">Operação</span>
               ) : usuario.papel === 'advogado' ? (
                 <span className="text-[10px] text-blue-200">Advogado{usuario.areas.length ? ` · ${usuario.areas.length} área${usuario.areas.length > 1 ? 's' : ''}` : ''}</span>
               ) : (

@@ -10,7 +10,7 @@ export type TipoPeticao = 'inicial' | 'contestação' | 'recurso' | 'parecer' | 
 export type StatusPeticao = 'rascunho' | 'protocolado' | 'juntado';
 // Perfil de acesso: admin (dono, faz tudo + configurações), advogado (edita, dentro das áreas),
 // visualizador (somente leitura, dentro das áreas).
-export type PapelUsuario = 'admin' | 'advogado' | 'visualizador';
+export type PapelUsuario = 'admin' | 'advogado' | 'operacao' | 'visualizador';
 
 export interface Cliente {
   id: string;
@@ -160,6 +160,18 @@ export interface Advogado {
   email: string;           // deve casar com o e-mail de login (Supabase auth) para o perfil ser reconhecido
   papel?: PapelUsuario;    // perfil de acesso (default: advogado)
   areas?: AreaDireito[];   // áreas de atuação — escopam o que o usuário vê em todo o sistema
+}
+
+export interface Notificacao {
+  id: string;
+  paraNome?: string;
+  paraEmail?: string;
+  titulo?: string;
+  mensagem?: string;
+  prazoId?: string;
+  processoId?: string;
+  lida: boolean;
+  criadoEm: string;
 }
 
 export interface Feriado {

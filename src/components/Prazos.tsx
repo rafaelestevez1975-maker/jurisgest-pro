@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useApp, genId } from '../context';
+import { db } from '../lib/db';
 import type { Prazo, Processo, TipoPrazo, StatusPrazo, AreaDireito } from '../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -380,8 +381,19 @@ export default function Prazos() {
   const declararCumprido = (id: string) => {
     const p = state.prazos.find(p => p.id === id);
     if (!p) return;
+    const quem = usuario.nome || p.responsavel || 'O responsável';
     dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, cumpridoDeclaradoEm: new Date().toISOString(), cumpridoDeclaradoPor: p.responsavel || '' } });
-    toast.success(`Marcado como cumprido — aguardando OK de ${p.agendadoPor || 'quem agendou'}.`);
+    // Avisa quem delegou (agendou) — e, se diferente, também o responsável definido.
+    const destinos = Array.from(new Set([p.agendadoPor, p.responsavel].filter(n => n && n !== quem))) as string[];
+    for (const destino of destinos) {
+      db.criarNotificacao({
+        paraNome: destino,
+        titulo: 'Tarefa cumprida — aguardando seu OK',
+        mensagem: `${quem} marcou como cumprida a tarefa "${p.descricao}". Dê o OK final na Agenda para baixá-la.`,
+        prazoId: p.id, processoId: p.processoId || undefined,
+      }).then(() => {}).catch(() => { /* não bloqueia o fluxo */ });
+    }
+    toast.success(`Marcado como cumprido — ${p.agendadoPor ? `${p.agendadoPor} foi avisado` : 'aguardando OK de quem agendou'}.`);
   };
   const desfazerCumprido = (id: string) => {
     const p = state.prazos.find(p => p.id === id);
@@ -587,15 +599,15 @@ export default function Prazos() {
                       <div className="mt-2" onClick={e => e.stopPropagation()}>
                         <CienciaIndicator
                           prazo={prazo}
-                          podeConfirmar={usuario.podeEditar}
+                          podeConfirmar={usuario.podeEditar || (usuario.isOperacao && prazo.responsavel === usuario.nome)}
                           onConfirmar={() => { setCienciaDialogId(prazo.id); setCienciaNome(prazo.responsavel); }}
                         />
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
                       {urgencyBadge(dias, prazo.status)}
-                      {usuario.podeEditar && prazo.status === 'pendente' && !prazo.cumpridoDeclaradoEm && (
-                        <Button variant="ghost" size="sm" className="h-7 text-xs text-green-600 hover:text-green-700 px-2" title="O responsável marca que cumpriu" onClick={() => declararCumprido(prazo.id)}>
+                      {(usuario.podeEditar || (usuario.isOperacao && prazo.responsavel === usuario.nome)) && prazo.status === 'pendente' && !prazo.cumpridoDeclaradoEm && (
+                        <Button variant="ghost" size="sm" className="h-7 text-xs text-green-600 hover:text-green-700 px-2" title="O responsável marca que cumpriu — quem delegou é avisado" onClick={() => declararCumprido(prazo.id)}>
                           <CheckCircle size={13} className="mr-1" />Cumpri
                         </Button>
                       )}

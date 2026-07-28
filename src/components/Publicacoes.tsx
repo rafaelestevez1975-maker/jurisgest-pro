@@ -771,6 +771,14 @@ export default function Publicacoes() {
                   )}
                 </DialogFooter>
                 )}
+                {/* Operação: pode apenas lançar andamento (não edita/agenda/exclui) */}
+                {usuario.isOperacao && viewPub.processoId && (
+                  <DialogFooter className="gap-2 flex-wrap">
+                    <Button size="sm" variant="outline" className="text-[#1e3a5f] border-[#1e3a5f]/30 hover:bg-blue-50" onClick={() => abrirAndamento(viewPub)}>
+                      <ListPlus size={14} className="mr-1" /> Gerar Andamento
+                    </Button>
+                  </DialogFooter>
+                )}
               </div>
             );
           })()}

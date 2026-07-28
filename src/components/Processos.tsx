@@ -1314,7 +1314,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
               {pubsProc.length > 0 && <> · <span className="text-indigo-600 font-medium">{pubsProc.length} despacho(s)/decisão(ões) com íntegra</span></>}
               {(() => { const tot = processo.movimentacoes.reduce((s, m) => s + (m.valor || 0), 0); return tot > 0 ? <> · <span className="text-green-700 font-medium">valores: R$ {tot.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></> : null; })()}
             </p>
-            {usuario.podeEditar && (
+            {usuario.podeContribuir && (
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Button size="sm" className="h-7 text-xs bg-[#2563eb] hover:bg-[#1e40af]" onClick={() => { setEditMovId(null); setNovaMov({ data: '', tipo: '', descricao: '', valor: '' }); setNovaMovTab(v => !v); }}>
                   <Plus size={12} className="mr-1" />Novo Andamento
@@ -1326,7 +1326,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
               </div>
             )}
           </div>
-          {usuario.podeEditar && novaMovTab && (
+          {usuario.podeContribuir && novaMovTab && (
             <div className="border rounded p-3 space-y-2 mb-3 bg-blue-50">
               <p className="text-xs font-semibold text-[#1e3a5f]">{editMovId ? 'Editar andamento' : 'Novo andamento'}</p>
               <div className="grid grid-cols-2 gap-2">
@@ -1452,7 +1452,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
         <TabsContent value="documentos" className="mt-3 space-y-2">
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs text-gray-500">{documentos.length} documento(s) anexado(s)</p>
-            {usuario.podeEditar && (
+            {usuario.podeContribuir && (
               <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
                 {subindoDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar documento
                 <input type="file" className="hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.jpg,.jpeg,.png" disabled={subindoDoc} onChange={e => { const f = e.target.files?.[0]; if (f) enviarDoc(f, 'documento'); e.target.value = ''; }} />

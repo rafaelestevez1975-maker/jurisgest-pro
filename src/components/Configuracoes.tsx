@@ -111,7 +111,7 @@ export default function Configuracoes() {
     dispatch({ type: 'UPDATE_ADVOGADO', payload: { ...adv, papel } });
   };
 
-  const PAPEL_LABEL: Record<PapelUsuario, string> = { admin: 'Administrador', advogado: 'Advogado (edita)', visualizador: 'Visualização (só lê)' };
+  const PAPEL_LABEL: Record<PapelUsuario, string> = { admin: 'Administrador', advogado: 'Advogado (edita)', operacao: 'Operação', visualizador: 'Visualização (só lê)' };
 
   const addFeriado = () => {
     if (!novoFeriado.data || !novoFeriado.descricao) { toast.error('Data e descrição são obrigatórias.'); return; }
@@ -207,7 +207,7 @@ export default function Configuracoes() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold flex items-center gap-2 flex-wrap">
                         {adv.nome}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${papel === 'admin' ? 'bg-[#1e3a5f] text-white' : papel === 'visualizador' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{PAPEL_LABEL[papel]}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${papel === 'admin' ? 'bg-[#1e3a5f] text-white' : papel === 'visualizador' ? 'bg-amber-100 text-amber-700' : papel === 'operacao' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{PAPEL_LABEL[papel]}</span>
                       </p>
                       <p className="text-xs text-gray-500 truncate">{adv.oab}{adv.email ? ` · ${adv.email}` : ' · sem e-mail (perfil não será reconhecido no login)'}</p>
                     </div>
@@ -228,6 +228,7 @@ export default function Configuracoes() {
                         <SelectContent>
                           <SelectItem value="admin" className="text-xs">Administrador</SelectItem>
                           <SelectItem value="advogado" className="text-xs">Advogado (edita)</SelectItem>
+                          <SelectItem value="operacao" className="text-xs">Operação (anexa, cumpre tarefas)</SelectItem>
                           <SelectItem value="visualizador" className="text-xs">Visualização (só lê)</SelectItem>
                         </SelectContent>
                       </Select>
@@ -253,6 +254,7 @@ export default function Configuracoes() {
                       <SelectContent>
                         <SelectItem value="admin" className="text-xs">Administrador</SelectItem>
                         <SelectItem value="advogado" className="text-xs">Advogado (edita)</SelectItem>
+                        <SelectItem value="operacao" className="text-xs">Operação (anexa, cumpre tarefas)</SelectItem>
                         <SelectItem value="visualizador" className="text-xs">Visualização (só lê)</SelectItem>
                       </SelectContent>
                     </Select>

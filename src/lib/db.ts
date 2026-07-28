@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import type {
   AppState, Cliente, Processo, Prazo, Publicacao, Peticao,
   Advogado, Feriado, ConfigEscritorio, CredencialTribunal, Movimentacao, Documento, AlertaArquivamento,
+  Notificacao,
 } from '../types';
 import { INITIAL_STATE } from '../data';
 
@@ -443,6 +444,26 @@ export const db = {
   // prazos
   upsertPrazo: (p: Prazo) => supabase.from('prazos').upsert(fromPrazo(p)),
   deletePrazo: (id: string) => supabase.from('prazos').delete().eq('id', id),
+
+  // notificações internas (ex.: Operação cumpre tarefa -> avisa quem delegou)
+  criarNotificacao: (n: { paraNome?: string; paraEmail?: string; titulo?: string; mensagem?: string; prazoId?: string; processoId?: string }) =>
+    supabase.from('jg_notificacoes').insert({
+      para_nome: n.paraNome ?? null, para_email: n.paraEmail ?? null,
+      titulo: n.titulo ?? null, mensagem: n.mensagem ?? null,
+      prazo_id: n.prazoId || null, processo_id: n.processoId || null,
+    }),
+  listarNotificacoes: async (nome: string): Promise<Notificacao[]> => {
+    const { data } = await supabase.from('jg_notificacoes').select('*')
+      .eq('para_nome', nome).order('criado_em', { ascending: false }).limit(50);
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id as string, paraNome: (r.para_nome as string) ?? undefined, paraEmail: (r.para_email as string) ?? undefined,
+      titulo: (r.titulo as string) ?? undefined, mensagem: (r.mensagem as string) ?? undefined,
+      prazoId: (r.prazo_id as string) ?? undefined, processoId: (r.processo_id as string) ?? undefined,
+      lida: !!r.lida, criadoEm: r.criado_em as string,
+    }));
+  },
+  marcarNotificacaoLida: (id: string) => supabase.from('jg_notificacoes').update({ lida: true }).eq('id', id),
+  marcarNotificacoesLidas: (nome: string) => supabase.from('jg_notificacoes').update({ lida: true }).eq('para_nome', nome).eq('lida', false),
 
   // publicacoes
   upsertPublicacao: (p: Publicacao) => supabase.from('publicacoes').upsert(fromPublicacao(p)),

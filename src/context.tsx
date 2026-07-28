@@ -14,7 +14,10 @@ export interface UsuarioAtual {
   nome: string;
   papel: PapelUsuario;
   isAdmin: boolean;
-  podeEditar: boolean;                    // admin ou advogado (visualizador = false)
+  isOperacao: boolean;                    // papel "Operação"
+  podeEditar: boolean;                    // admin ou advogado (edita/agenda/exclui). visualizador/operação = false
+  podeContribuir: boolean;                // anexar arquivos + lançar andamentos (admin, advogado, operação)
+  podeCumprir: boolean;                   // dar ciência e declarar cumprida uma tarefa PRÓPRIA (idem operação)
   areas: AreaDireito[];
   areasVisiveis: AreaDireito[] | null;    // null = vê todas as áreas (admin ou sem recorte)
   emArea: (area?: string) => boolean;     // true se a área é visível ao usuário
@@ -262,7 +265,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // mas sem esconder dados (areasVisiveis = null) para não piscar listas vazias.
     const papel: PapelUsuario = isOwner ? 'admin' : (auth ? (adv?.papel || 'visualizador') : 'visualizador');
     const isAdmin = papel === 'admin';
+    const isOperacao = papel === 'operacao';
     const podeEditar = papel === 'admin' || papel === 'advogado';
+    // Operação: não edita/agenda/exclui, mas contribui (anexos + andamentos) e cumpre tarefas próprias.
+    const podeContribuir = podeEditar || isOperacao;
+    const podeCumprir = podeEditar || isOperacao;
     const areas = (isAdmin ? [] : (adv?.areas || [])) as AreaDireito[];
     const areasVisiveis: AreaDireito[] | null = (isAdmin || !auth || areas.length === 0) ? null : areas;
     const emArea = (area?: string) => areasVisiveis === null || (!!area && areasVisiveis.includes(area as AreaDireito));
@@ -282,7 +289,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       !proc ? true : (emArea(proc.area) || (!!proc.id && liberadosPorTarefa.has(proc.id)));
     return {
       email, uid, nome,
-      papel, isAdmin, podeEditar, areas, areasVisiveis, emArea, podeVerProcesso,
+      papel, isAdmin, isOperacao, podeEditar, podeContribuir, podeCumprir, areas, areasVisiveis, emArea, podeVerProcesso,
     };
   }, [auth, state.advogados, state.prazos]);
 
