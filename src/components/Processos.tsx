@@ -1946,7 +1946,7 @@ export default function Processos() {
 
   const filtered = state.processos.filter(p => {
     if (mostrarArquivados ? !p.arquivado : !!p.arquivado) return false;
-    if (!usuario.emArea(p.area)) return false;
+    if (!usuario.podeVerProcesso(p)) return false;
     if (soAlerta && !p.alertaArquivamento?.ativo) return false;
     if (soNovos && !p.alertaNovo) return false;
     const cliente = state.clientes.find(c => c.id === p.clienteId);

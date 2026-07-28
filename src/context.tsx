@@ -18,6 +18,9 @@ export interface UsuarioAtual {
   areas: AreaDireito[];
   areasVisiveis: AreaDireito[] | null;    // null = vê todas as áreas (admin ou sem recorte)
   emArea: (area?: string) => boolean;     // true se a área é visível ao usuário
+  // true se pode ver ESTE processo: pela área OU por ser responsável/ter agendado
+  // uma tarefa PENDENTE nele (acesso vale até o cumprimento/cancelamento da tarefa).
+  podeVerProcesso: (proc?: { id?: string; area?: string }) => boolean;
 }
 
 // Avisa o usuário se uma gravação no Supabase falhar (evita perda silenciosa).
@@ -263,12 +266,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const areas = (isAdmin ? [] : (adv?.areas || [])) as AreaDireito[];
     const areasVisiveis: AreaDireito[] | null = (isAdmin || !auth || areas.length === 0) ? null : areas;
     const emArea = (area?: string) => areasVisiveis === null || (!!area && areasVisiveis.includes(area as AreaDireito));
+    const nome = adv?.nome || (isOwner ? 'Administrador' : (email || '—'));
+    // Processos liberados por tarefa: enquanto o usuário for responsável (ou tiver agendado)
+    // uma tarefa PENDENTE no processo, ele enxerga o processo mesmo fora da sua área.
+    // Ao concluir/cancelar a tarefa, o processo sai da liberação (se a área não for dele).
+    const liberadosPorTarefa = new Set<string>();
+    if (areasVisiveis !== null) {
+      for (const pz of state.prazos) {
+        if (pz.status === 'pendente' && pz.processoId && (pz.responsavel === nome || pz.agendadoPor === nome)) {
+          liberadosPorTarefa.add(pz.processoId);
+        }
+      }
+    }
+    const podeVerProcesso = (proc?: { id?: string; area?: string }) =>
+      !proc ? true : (emArea(proc.area) || (!!proc.id && liberadosPorTarefa.has(proc.id)));
     return {
-      email, uid,
-      nome: adv?.nome || (isOwner ? 'Administrador' : (email || '—')),
-      papel, isAdmin, podeEditar, areas, areasVisiveis, emArea,
+      email, uid, nome,
+      papel, isAdmin, podeEditar, areas, areasVisiveis, emArea, podeVerProcesso,
     };
-  }, [auth, state.advogados]);
+  }, [auth, state.advogados, state.prazos]);
 
   // Mantém o usuário atual disponível para o log de auditoria + registra o "login/acesso"
   // uma vez por sessão do navegador (quando a identidade resolve).

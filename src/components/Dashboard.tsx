@@ -39,7 +39,7 @@ export default function Dashboard() {
   // mesmo que o processo seja de outra área. (Admin/sem recorte já vê tudo.)
   const minhaTarefa = (p: { responsavel?: string; agendadoPor?: string }) =>
     p.responsavel === usuario.nome || p.agendadoPor === usuario.nome;
-  const processos = state.processos.filter(p => usuario.emArea(p.area));
+  const processos = state.processos.filter(p => usuario.podeVerProcesso(p));
   const prazos = state.prazos.filter(p => areaVisivel(p.processoId) || minhaTarefa(p));
   const publicacoes = state.publicacoes.filter(p => areaVisivel(p.processoId));
 

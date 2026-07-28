@@ -135,8 +135,8 @@ export default function Relatorios() {
     const hoje = Date.now();
     const agoraISO = new Date().toISOString();
     return processos.filter(p => {
-      // recorte de área do perfil do usuário
-      if (!usuario.emArea(p.area)) return false;
+      // recorte de área do perfil do usuário (+ processos liberados por tarefa pendente)
+      if (!usuario.podeVerProcesso(p)) return false;
       // status
       if (grupoStatus === 'ativos' && p.status !== 'ativo') return false;
       if (grupoStatus === 'inativos' && !INATIVOS.includes(p.status)) return false;
