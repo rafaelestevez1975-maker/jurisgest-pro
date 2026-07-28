@@ -82,7 +82,7 @@ function CienciaIndicator({ prazo, onConfirmar, podeConfirmar = true }: { prazo:
 
 const emptyPrazo = (): Omit<Prazo, 'id' | 'criadoEm'> => ({
   processoId: '', tipo: 'prazo_fatal', descricao: '', dataHora: '', diasUteis: true,
-  responsavel: '', status: 'pendente', alertaDias: 3, agendadoPor: '',
+  responsavel: '', status: 'pendente', urgente: false, alertaDias: 3, agendadoPor: '',
 });
 
 // Seletor de processo com busca — opcional (agendamento pode não ter processo)
@@ -212,6 +212,15 @@ function PrazoForm({ initial, onSave, onCancel }: {
         <div className="flex items-center gap-3 mt-3">
           <Switch checked={form.diasUteis} onCheckedChange={v => set('diasUteis', v)} />
           <Label className="text-xs cursor-pointer">Contar em dias úteis</Label>
+        </div>
+        <div className={`col-span-2 flex items-center gap-3 rounded-md border px-3 py-2 transition-colors ${form.urgente ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200'}`}>
+          <Switch checked={!!form.urgente} onCheckedChange={v => set('urgente', v)} className="data-[state=checked]:bg-red-600" />
+          <div className="min-w-0">
+            <Label className="text-sm font-semibold cursor-pointer flex items-center gap-1.5" onClick={() => set('urgente', !form.urgente)}>
+              <AlertTriangle size={15} className={form.urgente ? 'text-red-600' : 'text-gray-400'} /> Marcar como URGENTE
+            </Label>
+            <p className="text-[11px] text-gray-500">Fica com destaque vermelho na agenda para priorização imediata.</p>
+          </div>
         </div>
       </div>
       <DialogFooter>
@@ -540,11 +549,12 @@ export default function Prazos() {
               <Card key={prazo.id}
                 onClick={usuario.podeEditar ? () => { setEditPrazo(prazo); setDialogOpen(true); } : undefined}
                 title={usuario.podeEditar ? 'Clique para abrir e editar o agendamento' : undefined}
-                className={`border-l-4 ${urgencyStyle(dias, prazo.status)} ${concluido ? 'opacity-70' : ''} ${usuario.podeEditar ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}>
+                className={`border-l-4 ${urgencyStyle(dias, prazo.status)} ${prazo.urgente && !concluido ? 'ring-2 ring-red-500 !border-l-red-600 bg-red-50/60' : ''} ${concluido ? 'opacity-70' : ''} ${usuario.podeEditar ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}>
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {prazo.urgente && !concluido && <Badge className="bg-red-600 text-white text-[10px] px-1.5 animate-pulse"><AlertTriangle size={9} className="mr-0.5" />URGENTE</Badge>}
                         <span className={`text-sm font-semibold ${concluido ? 'line-through text-gray-400' : 'text-[#1e3a5f]'}`}>{prazo.descricao}</span>
                         <Badge className={`${tipoColor[prazo.tipo]} text-[10px] px-1.5`}>{prazo.tipo.replace('_', ' ')}</Badge>
                         {prazo.status === 'pendente' && prazo.cumpridoDeclaradoEm && <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5"><Clock size={9} className="mr-0.5" />Cumprido — aguardando OK{prazo.agendadoPor ? ` de ${prazo.agendadoPor.split(' ')[0]}` : ''}</Badge>}
@@ -620,7 +630,7 @@ export default function Prazos() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle className="text-[#1e3a5f]">{editPrazo ? 'Editar Prazo' : 'Novo Prazo'}</DialogTitle></DialogHeader>
           <PrazoForm
-            initial={editPrazo ? { processoId: editPrazo.processoId, tipo: editPrazo.tipo, descricao: editPrazo.descricao, dataHora: editPrazo.dataHora, diasUteis: editPrazo.diasUteis, responsavel: editPrazo.responsavel, status: editPrazo.status, alertaDias: editPrazo.alertaDias, agendadoPor: editPrazo.agendadoPor || '' } : emptyPrazo()}
+            initial={editPrazo ? { processoId: editPrazo.processoId, tipo: editPrazo.tipo, descricao: editPrazo.descricao, dataHora: editPrazo.dataHora, diasUteis: editPrazo.diasUteis, responsavel: editPrazo.responsavel, status: editPrazo.status, urgente: editPrazo.urgente || false, alertaDias: editPrazo.alertaDias, agendadoPor: editPrazo.agendadoPor || '' } : emptyPrazo()}
             onSave={handleSave}
             onCancel={() => { setDialogOpen(false); setEditPrazo(null); }}
           />

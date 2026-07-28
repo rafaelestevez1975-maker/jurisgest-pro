@@ -110,6 +110,7 @@ export interface Prazo {
   diasUteis: boolean;
   responsavel: string;        // advogado que deve CUMPRIR o prazo
   status: StatusPrazo;
+  urgente?: boolean;          // marcado como URGENTE no agendamento (destaque visual)
   alertaDias: number;
   criadoEm: string;
   vistoEm?: string;           // ciência: quando o responsável visualizou

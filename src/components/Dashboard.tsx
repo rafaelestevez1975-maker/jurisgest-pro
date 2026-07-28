@@ -186,7 +186,7 @@ export default function Dashboard() {
                   return (
                     <div key={prazo.id} onClick={() => proc && abrirProc(proc.id)} title={proc ? 'Abrir o processo' : undefined} className={`flex items-center justify-between px-4 py-3 ${urgencyColor(dias)} ${proc ? 'cursor-pointer hover:brightness-95' : ''}`}>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{prazo.descricao}</p>
+                        <p className="text-sm font-medium truncate flex items-center gap-1">{prazo.urgente && <span className="inline-flex items-center gap-0.5 text-red-600 font-bold flex-shrink-0"><AlertTriangle size={12} />URGENTE</span>}{prazo.descricao}</p>
                         <div className="text-xs opacity-70 flex items-center gap-1 min-w-0">
                           {proc?.numero && (<><span className="font-mono truncate">{proc.numero}</span><CopiarNumero numero={proc.numero} size={10} /><span className="flex-shrink-0">·</span></>)}
                           <span className="truncate">{prazo.responsavel.split(' ')[1] || prazo.responsavel}</span>

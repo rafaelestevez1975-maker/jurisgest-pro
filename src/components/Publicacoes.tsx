@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, Bell, Clock, ExternalLink, AlertCircle, Archive, ArchiveRestore, RefreshCw, CheckCheck, Loader2, Sparkles, Scale, Calendar as CalendarIcon, ListPlus, UserX } from 'lucide-react';
+import { Upload, Bell, Clock, ExternalLink, AlertCircle, AlertTriangle, Archive, ArchiveRestore, RefreshCw, CheckCheck, Loader2, Sparkles, Scale, Calendar as CalendarIcon, ListPlus, UserX } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 
 const TIPOS_PRAZO: { v: TipoPrazo; l: string }[] = [
@@ -226,6 +227,7 @@ export default function Publicacoes() {
   const [prazoIntimacao, setPrazoIntimacao] = useState('');  // data da intimação/disponibilização usada no cálculo
   const [prazoTipo, setPrazoTipo] = useState<TipoPrazo>('prazo_fatal');
   const [prazoHora, setPrazoHora] = useState('');   // horário (usado em audiência/reunião)
+  const [prazoUrgente, setPrazoUrgente] = useState(false);
 
   const filtered = state.publicacoes.filter(p => {
     // Controle de acesso por área: visualizador com recorte só vê publicações de áreas visíveis.
@@ -335,6 +337,8 @@ export default function Publicacoes() {
     // tenta extrair o horário da audiência do texto (ex.: "às 14:30", "14h30", "09h00")
     const mHora = (pub.conteudo || '').match(/\b([01]?\d|2[0-3])\s*[:h]\s*([0-5]\d)\b/);
     setPrazoHora(mHora ? `${mHora[1].padStart(2, '0')}:${mHora[2]}` : '');
+    // pré-marca URGENTE se o teor sinalizar urgência (o usuário pode ajustar)
+    setPrazoUrgente(/urgen(te|cia|ência)/i.test(pub.conteudo || ''));
     setPrazoResp(state.advogados[0]?.nome || '');
     setViewPub(null);
     setGerarPrazoId(pub.id);
@@ -405,20 +409,21 @@ export default function Publicacoes() {
         descricao: prazoDescricao,
         dataHora: prazoData + 'T' + (((prazoTipo === 'audiência' || prazoTipo === 'reunião') && prazoHora) ? prazoHora : '23:59'),
         diasUteis: true,
-        responsavel, status: 'pendente', alertaDias: 3, criadoEm: new Date().toISOString(),
+        responsavel, status: 'pendente', urgente: prazoUrgente, alertaDias: 3, criadoEm: new Date().toISOString(),
       },
     });
     dispatch({ type: 'UPDATE_PUBLICACAO', payload: { ...pub, status: 'prazo_gerado' } });
     toast.success('Prazo gerado com sucesso!');
     if (continuar) {
-      // mantém o diálogo aberto para adicionar outro prazo (limpa só a tarefa/tipo/horário)
+      // mantém o diálogo aberto para adicionar outro prazo (limpa só a tarefa/tipo/horário/urgência)
       setPrazoDescricao('');
       setPrazoTipo('prazo_fatal');
       setPrazoHora('');
+      setPrazoUrgente(false);
     } else {
       setGerarPrazoId(null);
       setPrazoDescricao(''); setPrazoData(''); setPrazoResp('');
-      setPrazoTipo('prazo_fatal'); setPrazoHora(''); setPrazoDiasDetectados(null);
+      setPrazoTipo('prazo_fatal'); setPrazoHora(''); setPrazoDiasDetectados(null); setPrazoUrgente(false);
     }
   };
 
@@ -836,6 +841,15 @@ export default function Publicacoes() {
                   {state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div className={`flex items-center gap-3 rounded-md border px-3 py-2 transition-colors ${prazoUrgente ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200'}`}>
+              <Switch checked={prazoUrgente} onCheckedChange={setPrazoUrgente} className="data-[state=checked]:bg-red-600" />
+              <div className="min-w-0">
+                <Label className="text-sm font-semibold cursor-pointer flex items-center gap-1.5" onClick={() => setPrazoUrgente(v => !v)}>
+                  <AlertTriangle size={15} className={prazoUrgente ? 'text-red-600' : 'text-gray-400'} /> Marcar como URGENTE
+                </Label>
+                <p className="text-[11px] text-gray-500">Fica com destaque vermelho na agenda para priorização imediata.</p>
+              </div>
             </div>
           </div>
           <p className="text-[11px] text-gray-400 mt-2">Precisa de mais de um prazo desta publicação? Use <b>“Criar e agendar outro”</b> — o teor continua à vista para o próximo.</p>
