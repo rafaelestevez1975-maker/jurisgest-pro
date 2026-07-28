@@ -118,20 +118,62 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Barra superior: marca + ações */}
-      <header className="bg-[#1e3a5f] text-white sticky top-0 z-20 shadow-sm">
-        <div className="flex items-center justify-between px-4 h-14">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-md bg-white/10 flex items-center justify-center flex-shrink-0">
-              <Scale size={17} className="text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="font-bold text-sm leading-tight truncate">{state.escritorio.nome || 'JurisGest Pro'}</p>
-              {state.escritorio.oab && <p className="text-[11px] text-blue-200 leading-tight truncate">{state.escritorio.oab}</p>}
-            </div>
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Menu lateral esquerdo */}
+      <aside className="w-14 md:w-56 bg-[#1e3a5f] text-white flex flex-col flex-shrink-0 sticky top-0 h-screen z-30">
+        <div className="flex items-center gap-2.5 px-2 md:px-4 h-14 border-b border-white/10 flex-shrink-0">
+          <div className="w-9 h-9 rounded-md bg-white/10 flex items-center justify-center flex-shrink-0 mx-auto md:mx-0">
+            <Scale size={18} className="text-white" />
           </div>
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <div className="min-w-0 hidden md:block">
+            <p className="font-bold text-sm leading-tight truncate">{state.escritorio.nome || 'JurisGest Pro'}</p>
+            {state.escritorio.oab && <p className="text-[11px] text-blue-200 leading-tight truncate">{state.escritorio.oab}</p>}
+          </div>
+        </div>
+        {/* Navegação vertical */}
+        <nav className="flex-1 overflow-y-auto py-2 no-scrollbar">
+          {visibleNav.map(item => {
+            const Icon = item.icon;
+            const badge = badges[item.id];
+            const active = page === item.id;
+            return (
+              <button key={item.id} onClick={() => navigate(item.id)} title={item.label}
+                className={`relative w-full flex items-center gap-3 px-2 md:px-4 py-2.5 text-sm border-l-[3px] transition-colors
+                  ${active ? 'border-white text-white font-semibold bg-white/10' : 'border-transparent text-blue-100 hover:text-white hover:bg-white/5'}`}>
+                <Icon size={18} className={`flex-shrink-0 mx-auto md:mx-0 ${active ? 'text-white' : 'text-blue-300'}`} />
+                <span className="hidden md:inline flex-1 text-left">{item.label}</span>
+                {badge ? <span className="hidden md:flex bg-red-500 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 items-center justify-center">{badge > 9 ? '9+' : badge}</span> : null}
+                {badge ? <span className="md:hidden absolute top-1.5 right-2 w-2 h-2 bg-red-500 rounded-full" /> : null}
+              </button>
+            );
+          })}
+        </nav>
+        {/* Usuário + Sair */}
+        <div className="border-t border-white/10 p-2 md:p-3 flex-shrink-0">
+          <div className="hidden md:block mb-2 leading-tight">
+            <span className="text-xs text-white/90 truncate block max-w-[190px]">{usuario.nome}</span>
+            {usuario.papel === 'visualizador' ? (
+              <span className="text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 rounded px-1.5 py-0.5 inline-flex items-center gap-1 mt-0.5"><Eye size={10} /> Somente leitura</span>
+            ) : usuario.papel === 'operacao' ? (
+              <span className="text-[10px] bg-emerald-400/20 text-emerald-50 border border-emerald-300/40 rounded px-1.5 py-0.5 inline-block mt-0.5">Operação</span>
+            ) : usuario.papel === 'advogado' ? (
+              <span className="text-[10px] text-blue-200">Advogado{usuario.areas.length ? ` · ${usuario.areas.length} área${usuario.areas.length > 1 ? 's' : ''}` : ''}</span>
+            ) : (
+              <span className="text-[10px] text-blue-200">Administrador</span>
+            )}
+          </div>
+          <button onClick={() => { try { sessionStorage.removeItem('jg_login_logged'); } catch { /* */ } supabase.auth.signOut(); }} title="Sair" className="w-full flex items-center justify-center md:justify-start gap-1.5 text-xs text-blue-100 hover:text-white hover:bg-white/10 rounded px-2 py-1.5 transition-colors">
+            <LogOut size={14} /><span className="hidden md:inline">Sair</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Coluna principal */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="bg-[#1e3a5f] text-white sticky top-0 z-20 shadow-sm">
+          <div className="flex items-center justify-between px-4 h-14 gap-2">
+            <p className="font-semibold text-sm truncate">{visibleNav.find(n => n.id === page)?.label || ''}</p>
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             <button onClick={atualizarSistema} disabled={atualizando} title="Atualizar o sistema (recarrega os dados e busca novidades)" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-2.5 py-1 text-xs text-white transition-colors disabled:opacity-60">
               <RefreshCw size={13} className={atualizando ? 'animate-spin' : ''} /><span className="hidden sm:inline">{atualizando ? 'Atualizando…' : 'Atualizar'}</span>
             </button>
@@ -162,49 +204,13 @@ function AppContent() {
               </button>
             )}
             <NotificacoesBell />
-            <div className="hidden sm:flex flex-col items-end leading-tight mr-1">
-              <span className="text-xs text-white/90 truncate max-w-[170px]">{usuario.nome}</span>
-              {usuario.papel === 'visualizador' ? (
-                <span className="text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 rounded px-1.5 py-0.5 flex items-center gap-1 mt-0.5"><Eye size={10} /> Somente leitura</span>
-              ) : usuario.papel === 'operacao' ? (
-                <span className="text-[10px] bg-emerald-400/20 text-emerald-50 border border-emerald-300/40 rounded px-1.5 py-0.5 mt-0.5">Operação</span>
-              ) : usuario.papel === 'advogado' ? (
-                <span className="text-[10px] text-blue-200">Advogado{usuario.areas.length ? ` · ${usuario.areas.length} área${usuario.areas.length > 1 ? 's' : ''}` : ''}</span>
-              ) : (
-                <span className="text-[10px] text-blue-200">Administrador</span>
-              )}
             </div>
-            {usuario.papel === 'visualizador' && (
-              <span className="sm:hidden text-[10px] bg-amber-400/20 text-amber-100 border border-amber-300/40 rounded px-1.5 py-0.5 flex items-center gap-1"><Eye size={10} /></span>
-            )}
-            <button onClick={() => { try { sessionStorage.removeItem('jg_login_logged'); } catch { /* */ } supabase.auth.signOut(); }} className="flex items-center gap-1.5 text-xs text-blue-100 hover:text-white hover:bg-white/10 rounded px-2 py-1.5 transition-colors">
-              <LogOut size={14} /><span className="hidden sm:inline">Sair</span>
-            </button>
           </div>
-        </div>
-        {/* Menu horizontal */}
-        <nav className="flex items-stretch px-2 overflow-x-auto border-t border-white/10 no-scrollbar">
-          {visibleNav.map(item => {
-            const Icon = item.icon;
-            const badge = badges[item.id];
-            const active = page === item.id;
-            return (
-              <button key={item.id} onClick={() => navigate(item.id)}
-                className={`flex items-center gap-2 px-3.5 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors
-                  ${active ? 'border-white text-white font-semibold bg-white/5' : 'border-transparent text-blue-100 hover:text-white hover:bg-white/5'}`}>
-                <Icon size={15} className={active ? 'text-white' : 'text-blue-300'} />
-                <span>{item.label}</span>
-                {badge ? (
-                  <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">{badge > 9 ? '9+' : badge}</span>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
-      </header>
-      <main className="flex-1 w-full max-w-[1500px] mx-auto p-4 lg:p-6 overflow-auto">
-        {pageComponents[page]}
-      </main>
+        </header>
+        <main className="flex-1 w-full p-4 lg:p-6 overflow-auto">
+          {pageComponents[page]}
+        </main>
+      </div>
     </div>
   );
 }

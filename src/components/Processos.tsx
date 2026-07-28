@@ -1141,6 +1141,9 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
   const [editando, setEditando] = useState(false);
   const [novoPrazoTab, setNovoPrazoTab] = useState(false);
   const [novoPrazo, setNovoPrazo] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
+  // edição inline de um prazo já agendado (a partir da aba do processo)
+  const [editPrazoId, setEditPrazoId] = useState<string | null>(null);
+  const [editPrazo, setEditPrazoForm] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
   const cliente = state.clientes.find(c => c.id === processo.clienteId);
   const prazosProc = state.prazos.filter(p => p.processoId === processo.id);
   const peticoesProc = state.peticoes.filter(p => p.processoId === processo.id);
@@ -1167,6 +1170,20 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
     setNovoPrazo({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
     setNovoPrazoTab(false);
     toast.success('Prazo agendado!');
+  };
+
+  const iniciarEditPrazo = (pr: Prazo) => {
+    setNovoPrazoTab(false);
+    setEditPrazoId(pr.id);
+    setEditPrazoForm({ descricao: pr.descricao, dataHora: pr.dataHora, tipo: pr.tipo, responsavel: pr.responsavel || '' });
+  };
+  const salvarEditPrazo = () => {
+    const pr = prazosProc.find(p => p.id === editPrazoId);
+    if (!pr) { setEditPrazoId(null); return; }
+    if (!editPrazo.descricao.trim() || !editPrazo.dataHora) { toast.error('Preencha a tarefa e a data/hora.'); return; }
+    dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, descricao: editPrazo.descricao.trim(), dataHora: editPrazo.dataHora, tipo: editPrazo.tipo, responsavel: editPrazo.responsavel } });
+    setEditPrazoId(null);
+    toast.success('Prazo atualizado!');
   };
   const [imgUrl, setImgUrl] = useState('');
   useEffect(() => {
@@ -1395,6 +1412,32 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
           {prazosProc.map(pr => {
             const concluido = pr.status === 'cumprido' || pr.status === 'cancelado';
             const [dt, hr] = pr.dataHora.split('T');
+            if (editPrazoId === pr.id) {
+              return (
+              <div key={pr.id} className="border border-amber-300 rounded p-3 space-y-2 bg-amber-50">
+                <p className="text-[11px] font-semibold text-amber-800">Editando prazo agendado</p>
+                <div><Label className="text-xs">Tarefa / descrição do prazo</Label><Input className="mt-1 h-7 text-xs" value={editPrazo.descricao} onChange={e => setEditPrazoForm(p => ({ ...p, descricao: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">Data e hora</Label><Input type="datetime-local" step="300" className="mt-1 h-7 text-xs" value={editPrazo.dataHora} onChange={e => setEditPrazoForm(p => ({ ...p, dataHora: e.target.value }))} /></div>
+                  <div>
+                    <Label className="text-xs">Tipo</Label>
+                    <Select value={editPrazo.tipo} onValueChange={v => setEditPrazoForm(p => ({ ...p, tipo: v as TipoPrazo }))}>
+                      <SelectTrigger className="mt-1 h-7 text-xs capitalize"><SelectValue /></SelectTrigger>
+                      <SelectContent>{TIPOS_PRAZO_DET.map(t => <SelectItem key={t} value={t} className="capitalize">{t.replace('_', ' ')}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Responsável</Label>
+                  <Select value={editPrazo.responsavel} onValueChange={v => setEditPrazoForm(p => ({ ...p, responsavel: v }))}>
+                    <SelectTrigger className="mt-1 h-7 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-2"><Button size="sm" variant="success" className="h-7 text-xs" onClick={salvarEditPrazo}>Salvar</Button><Button size="sm" variant="cancel" className="h-7 text-xs" onClick={() => setEditPrazoId(null)}>Cancelar</Button></div>
+              </div>
+              );
+            }
             return (
             <div key={pr.id} className="flex items-center justify-between border rounded p-2 text-xs gap-2">
               <div className="min-w-0">
@@ -1403,6 +1446,9 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <Badge variant="outline" className="capitalize text-[10px]">{pr.status}</Badge>
+                {usuario.podeEditar && !concluido && (
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-400 hover:text-[#2563eb]" title="Editar prazo" onClick={() => iniciarEditPrazo(pr)}><Edit size={13} /></Button>
+                )}
                 {usuario.podeEditar && (concluido ? (
                   <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2 text-blue-600 hover:text-blue-700" onClick={() => dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'pendente', aprovadoEm: undefined, aprovadoPor: undefined, cumpridoDeclaradoEm: undefined, cumpridoDeclaradoPor: undefined } })}>Reabrir</Button>
                 ) : (

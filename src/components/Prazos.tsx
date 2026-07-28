@@ -262,15 +262,15 @@ function CalendarioMes({ prazos, mes, onMesChange, selectedDia, onSelectDia }: {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => onMesChange(new Date(ano, mesNum - 1, 1))}>‹</Button>
-        <span className="font-semibold text-sm text-[#1e3a5f]">{meses[mesNum]} {ano}</span>
-        <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => onMesChange(new Date(ano, mesNum + 1, 1))}>›</Button>
+      <div className="flex items-center justify-between mb-4">
+        <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-base" onClick={() => onMesChange(new Date(ano, mesNum - 1, 1))}>‹</Button>
+        <span className="font-semibold text-base text-[#1e3a5f]">{meses[mesNum]} {ano}</span>
+        <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-base" onClick={() => onMesChange(new Date(ano, mesNum + 1, 1))}>›</Button>
       </div>
-      <div className="grid grid-cols-7 gap-1 mb-1">
-        {semana.map(s => <div key={s} className="text-center text-[10px] font-semibold text-gray-400 py-1">{s}</div>)}
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+        {semana.map(s => <div key={s} className="text-center text-[11px] font-semibold text-gray-400 py-1">{s}</div>)}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1.5">
         {Array.from({ length: primeiroDia }).map((_, i) => <div key={`e${i}`} />)}
         {Array.from({ length: diasNoMes }).map((_, i) => {
           const dia = i + 1;
@@ -281,7 +281,7 @@ function CalendarioMes({ prazos, mes, onMesChange, selectedDia, onSelectDia }: {
           const isSel = diaISO === selectedDia;
           return (
             <button key={dia} onClick={() => onSelectDia(diaISO)}
-              className={`relative h-9 rounded flex items-center justify-center text-sm transition-colors
+              className={`relative h-11 rounded-md flex items-center justify-center text-[15px] transition-colors
                 ${isSel ? 'bg-[#1e3a5f] text-white font-bold'
                   : isHoje ? 'text-blue-600 font-bold ring-1 ring-blue-300'
                   : aberto ? 'font-bold text-[#1e3a5f] hover:bg-gray-100'
@@ -461,8 +461,8 @@ export default function Prazos() {
 
       <div className="flex flex-col lg:flex-row gap-5 items-start">
         {/* ESQUERDA: calendário (largura fixa, fixo ao rolar) */}
-        <Card className="w-full lg:w-[320px] lg:flex-shrink-0 lg:sticky lg:top-20">
-          <CardContent className="p-4">
+        <Card className="w-full lg:w-[400px] lg:flex-shrink-0 lg:sticky lg:top-4">
+          <CardContent className="p-5">
             <CalendarioMes prazos={state.prazos} mes={mesCal} onMesChange={setMesCal}
               selectedDia={diaSel} onSelectDia={dia => { setDiaSel(dia); setPeriodo('dia'); }} />
           </CardContent>
