@@ -177,7 +177,7 @@ function ImportCSVPub({ onImport, onClose }: { onImport: (pubs: Omit<Publicacao,
         </div>
       )}
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button variant="cancel" size="sm" onClick={onClose}>Cancelar</Button>
         <Button size="sm" className="bg-[#2563eb]" disabled={!preview.length} onClick={() => { onImport(preview); onClose(); }}>Importar ({preview.length})</Button>
       </DialogFooter>
     </div>
@@ -866,7 +866,7 @@ export default function Publicacoes() {
             <Button variant="outline" size="sm" className="text-[#1e3a5f] border-[#1e3a5f]/40 hover:bg-blue-50" onClick={() => gerarPrazoId && handleGerarPrazo(gerarPrazoId, true)}>
               <ListPlus size={14} className="mr-1" /> Criar e agendar outro
             </Button>
-            <Button size="sm" className="bg-[#2563eb]" onClick={() => gerarPrazoId && handleGerarPrazo(gerarPrazoId)}>Criar Prazo</Button>
+            <Button size="sm" variant="success" onClick={() => gerarPrazoId && handleGerarPrazo(gerarPrazoId)}>Criar Prazo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -892,8 +892,8 @@ export default function Publicacoes() {
             </div>
           </div>
           <DialogFooter className="mt-3">
-            <Button variant="outline" size="sm" onClick={() => setAndamentoPub(null)}>Cancelar</Button>
-            <Button size="sm" className="bg-[#2563eb]" onClick={salvarAndamento}>Cadastrar Andamento</Button>
+            <Button variant="cancel" size="sm" onClick={() => setAndamentoPub(null)}>Cancelar</Button>
+            <Button size="sm" variant="success" onClick={salvarAndamento}>Cadastrar Andamento</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

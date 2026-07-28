@@ -225,8 +225,8 @@ function PrazoForm({ initial, onSave, onCancel }: {
         </div>
       </div>
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onCancel}>Cancelar</Button>
-        <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={() => {
+        <Button variant="cancel" size="sm" onClick={onCancel}>Cancelar</Button>
+        <Button size="sm" variant="success" onClick={() => {
           if (!form.descricao.trim() || !form.dataHora) { toast.error('Preencha a tarefa e a data/hora.'); return; }
           if (!form.responsavel) { toast.error('Escolha o advogado responsável pelo prazo.'); return; }
           onSave(form);
@@ -673,7 +673,7 @@ export default function Prazos() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => { setCienciaDialogId(null); setCienciaNome(''); }}>Cancelar</Button>
+            <Button variant="cancel" size="sm" onClick={() => { setCienciaDialogId(null); setCienciaNome(''); }}>Cancelar</Button>
             <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => cienciaDialogId && confirmarCiencia(cienciaDialogId, cienciaNome)}>
               <Eye size={13} className="mr-1" /> Confirmar Ciência
             </Button>
@@ -712,7 +712,7 @@ export default function Prazos() {
             );
           })()}
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => { setOkFinalId(null); setOkNome(''); }}>Cancelar</Button>
+            <Button variant="cancel" size="sm" onClick={() => { setOkFinalId(null); setOkNome(''); }}>Cancelar</Button>
             <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => okFinalId && darOkFinal(okFinalId, okNome)}>
               <CheckCircle size={13} className="mr-1" /> Dar OK e baixar
             </Button>
@@ -727,7 +727,7 @@ export default function Prazos() {
           <p className="text-sm text-gray-600">O prazo passa para a situação <b>cancelado</b> — ele <b>não é excluído</b> e continua no histórico (filtre por "cancelado" para vê-lo).</p>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setDeleteId(null)}>Voltar</Button>
-            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => { if (deleteId) { const p = state.prazos.find(x => x.id === deleteId); if (p) dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'cancelado' } }); toast.success('Prazo cancelado.'); setDeleteId(null); } }}>Cancelar prazo</Button>
+            <Button size="sm" variant="danger" onClick={() => { if (deleteId) { const p = state.prazos.find(x => x.id === deleteId); if (p) dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'cancelado' } }); toast.success('Prazo cancelado.'); setDeleteId(null); } }}>Cancelar prazo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

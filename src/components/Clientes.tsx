@@ -133,8 +133,8 @@ function ClienteForm({ initial, onSave, onCancel }: {
         <Textarea className="mt-1 text-sm" rows={2} value={form.observacoes || ''} onChange={e => set('observacoes', e.target.value)} />
       </div>
       <DialogFooter className="pt-2">
-        <Button variant="outline" size="sm" onClick={onCancel}>Cancelar</Button>
-        <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={handleSubmit}>Salvar</Button>
+        <Button variant="cancel" size="sm" onClick={onCancel}>Cancelar</Button>
+        <Button size="sm" variant="success" onClick={handleSubmit}>Salvar</Button>
       </DialogFooter>
     </div>
   );
@@ -199,7 +199,7 @@ function ImportCSV({ onImport, onClose }: { onImport: (clientes: Omit<Cliente, '
         </div>
       )}
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button variant="cancel" size="sm" onClick={onClose}>Cancelar</Button>
         <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" disabled={!preview.length} onClick={() => { onImport(preview); onClose(); }}>
           Importar {preview.length > 0 ? `(${preview.length})` : ''}
         </Button>
@@ -511,7 +511,7 @@ export default function Clientes() {
           <DialogHeader><DialogTitle>Arquivar cliente</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-600">O cliente sai da lista ativa, mas <b>não é excluído</b> — você pode restaurá-lo a qualquer momento em "Arquivados". Os processos vinculados são mantidos.</p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
+            <Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
             <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && handleArquivar(arquivarId)}>Arquivar</Button>
           </DialogFooter>
         </DialogContent>

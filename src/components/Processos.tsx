@@ -708,7 +708,7 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
 
       {tab !== 'datajud' && (
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+          <Button variant="cancel" size="sm" onClick={onClose}>Cancelar</Button>
           <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" disabled={!resultado || tab === 'datajud'} onClick={confirmar}>
             Pré-preencher formulário
           </Button>
@@ -901,7 +901,7 @@ function DialogBuscarDataJud({ onPreencherFormulario, onClose, embedded }: {
       )}
 
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button variant="cancel" size="sm" onClick={onClose}>Cancelar</Button>
         <Button
           size="sm"
           className="bg-[#2563eb] hover:bg-blue-700"
@@ -1080,8 +1080,8 @@ function ProcessoForm({ initial, onSave, onCancel }: {
         </div>
       </div>
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onCancel}>Cancelar</Button>
-        <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={() => {
+        <Button variant="cancel" size="sm" onClick={onCancel}>Cancelar</Button>
+        <Button size="sm" variant="success" onClick={() => {
           if (!form.numero.trim() || !form.clienteId || !form.tribunal) { toast.error('Preencha número, cliente e tribunal.'); return; }
           onSave(form, pendingMovs);
         }}>Salvar</Button>
@@ -1342,7 +1342,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                 <Label className="text-xs">Valor <span className="text-gray-400">(R$ — opcional, ex.: cumprimento de sentença, depósito, custas)</span></Label>
                 <Input type="number" step="0.01" min="0" className="mt-1 h-7 text-xs" placeholder="0,00" value={novaMov.valor} onChange={e => setNovaMov(m => ({...m, valor: e.target.value}))} />
               </div>
-              <div className="flex gap-2"><Button size="sm" className="h-7 text-xs bg-[#2563eb]" onClick={addMovimentacao}>{editMovId ? 'Salvar' : 'Adicionar'}</Button><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setNovaMovTab(false); setEditMovId(null); }}>Cancelar</Button></div>
+              <div className="flex gap-2"><Button size="sm" variant="success" className="h-7 text-xs" onClick={addMovimentacao}>{editMovId ? 'Salvar' : 'Adicionar'}</Button><Button size="sm" variant="cancel" className="h-7 text-xs" onClick={() => { setNovaMovTab(false); setEditMovId(null); }}>Cancelar</Button></div>
             </div>
           )}
           {(() => {
@@ -1435,7 +1435,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                   <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="flex gap-2"><Button size="sm" className="h-7 text-xs bg-[#2563eb]" onClick={addPrazo}>Agendar</Button><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setNovoPrazoTab(false)}>Cancelar</Button></div>
+              <div className="flex gap-2"><Button size="sm" variant="success" className="h-7 text-xs" onClick={addPrazo}>Agendar</Button><Button size="sm" variant="cancel" className="h-7 text-xs" onClick={() => setNovoPrazoTab(false)}>Cancelar</Button></div>
             </div>
           ) : (
             <Button size="sm" variant="outline" className="h-7 text-xs mt-2" onClick={() => setNovoPrazoTab(true)}><Clock size={12} className="mr-1" />Agendar prazo</Button>
@@ -1787,7 +1787,7 @@ function DialogImportarLote({ onClose }: { onClose: () => void }) {
           )}
 
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={onClose} disabled={importando}>Cancelar</Button>
+            <Button variant="cancel" size="sm" onClick={onClose} disabled={importando}>Cancelar</Button>
             <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={confirmar} disabled={importando || selecionadas.length === 0}>
               {importando ? <Loader2 size={14} className="animate-spin mr-1" /> : <CheckCircle2 size={14} className="mr-1" />}
               Importar {selecionadas.length} processo(s)
@@ -1838,7 +1838,7 @@ function DialogConcordarArquivamento({ proc, onConfirm, onCancel }: {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onCancel}>Cancelar</Button>
+          <Button variant="cancel" size="sm" onClick={onCancel}>Cancelar</Button>
           <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => onConfirm(situacao, obs)}>Confirmar inativação</Button>
         </DialogFooter>
       </DialogContent>
@@ -2308,7 +2308,7 @@ export default function Processos() {
           <DialogHeader><DialogTitle>Arquivar processo</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-600">O processo sai da lista ativa, mas <b>não é excluído</b> — os andamentos, prazos e publicações são mantidos, e você pode restaurá-lo em "Arquivados".</p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
+            <Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
             <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarProcesso(arquivarId)}>Arquivar</Button>
           </DialogFooter>
         </DialogContent>

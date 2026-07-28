@@ -183,7 +183,7 @@ export default function Configuracoes() {
                   <Input className="mt-1 h-8 text-sm" value={escritorio.endereco} onChange={e => setEscritorio(s => ({ ...s, endereco: e.target.value }))} />
                 </div>
               </div>
-              <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 mt-2" onClick={salvarEscritorio}>
+              <Button size="sm" variant="success" className="mt-2" onClick={salvarEscritorio}>
                 <Save size={13} className="mr-1" />Salvar
               </Button>
             </CardContent>
@@ -276,7 +276,7 @@ export default function Configuracoes() {
                     <div className="mt-1"><AreaChips selected={novoAdv.areas} onToggle={a => setNovoAdv(prev => ({ ...prev, areas: prev.areas.includes(a) ? prev.areas.filter(x => x !== a) : [...prev.areas, a] }))} /></div>
                   </div>
                 </div>
-                <Button size="sm" className="bg-[#2563eb] h-8 text-xs" onClick={addAdvogado} disabled={savingUser}>
+                <Button size="sm" variant="success" className="h-8 text-xs" onClick={addAdvogado} disabled={savingUser}>
                   {savingUser ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Plus size={12} className="mr-1" />}
                   {savingUser ? 'Criando login...' : 'Adicionar usuário'}
                 </Button>
@@ -289,7 +289,7 @@ export default function Configuracoes() {
               <DialogHeader><DialogTitle>Remover acesso</DialogTitle></DialogHeader>
               <p className="text-sm text-gray-600">Remover este usuário do JurisGest? Ele perde o acesso ao sistema. (A conta de login continua existindo no Supabase e pode ser recriada aqui depois.)</p>
               <DialogFooter>
-                <Button variant="outline" size="sm" onClick={() => setDeleteAdvId(null)}>Cancelar</Button>
+                <Button variant="cancel" size="sm" onClick={() => setDeleteAdvId(null)}>Cancelar</Button>
                 <Button variant="destructive" size="sm" onClick={() => { if (deleteAdvId) { dispatch({ type: 'DELETE_ADVOGADO', payload: deleteAdvId }); setDeleteAdvId(null); toast.success('Acesso removido.'); } }}>Remover</Button>
               </DialogFooter>
             </DialogContent>
@@ -307,8 +307,8 @@ export default function Configuracoes() {
                 <Button type="button" size="sm" variant="outline" className="h-9 text-[11px] px-2" onClick={() => { setResetPwd(gerarSenha()); setShowPwd(true); }}>Gerar</Button>
               </div>
               <DialogFooter>
-                <Button variant="outline" size="sm" onClick={() => { setResetFor(null); setResetPwd(''); }}>Cancelar</Button>
-                <Button size="sm" className="bg-[#2563eb]" onClick={redefinirSenha} disabled={resetting}>
+                <Button variant="cancel" size="sm" onClick={() => { setResetFor(null); setResetPwd(''); }}>Cancelar</Button>
+                <Button size="sm" variant="success" onClick={redefinirSenha} disabled={resetting}>
                   {resetting ? <Loader2 size={13} className="mr-1 animate-spin" /> : <KeyRound size={13} className="mr-1" />}Salvar senha
                 </Button>
               </DialogFooter>
@@ -341,7 +341,7 @@ export default function Configuracoes() {
                   <div><Label className="text-xs">Data</Label><Input type="date" className="mt-1 h-8 text-sm" value={novoFeriado.data} onChange={e => setNovoFeriado(f => ({ ...f, data: e.target.value }))} /></div>
                   <div><Label className="text-xs">Descrição</Label><Input className="mt-1 h-8 text-sm" value={novoFeriado.descricao} onChange={e => setNovoFeriado(f => ({ ...f, descricao: e.target.value }))} placeholder="Ex: Aniversário da cidade" /></div>
                 </div>
-                <Button size="sm" className="bg-[#2563eb] h-8 text-xs" onClick={addFeriado}><Plus size={12} className="mr-1" />Adicionar</Button>
+                <Button size="sm" variant="success" className="h-8 text-xs" onClick={addFeriado}><Plus size={12} className="mr-1" />Adicionar</Button>
               </div>
             </CardContent>
           </Card>
@@ -387,7 +387,8 @@ export default function Configuracoes() {
                   </div>
                   <Button
                     size="sm"
-                    className="h-9 bg-[#2563eb] hover:bg-blue-700 text-xs"
+                    variant="success"
+                    className="h-9 text-xs"
                     onClick={() => {
                       dispatch({ type: 'SET_ANTHROPIC_KEY', payload: anthropicKey.trim() });
                       toast.success(anthropicKey.trim() ? 'Chave API salva!' : 'Chave API removida.');
@@ -433,7 +434,7 @@ export default function Configuracoes() {
                       <div><Label className="text-xs">Login / CPF</Label><Input className="mt-1 h-8 text-sm" value={cred.login} onChange={e => setCred(tribunal, 'login', e.target.value)} /></div>
                       <div><Label className="text-xs">Senha / Token</Label><Input type="password" className="mt-1 h-8 text-sm" value={cred.token} onChange={e => setCred(tribunal, 'token', e.target.value)} /></div>
                     </div>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => salvarCredencial(tribunal)}>
+                    <Button size="sm" variant="success" className="h-7 text-xs" onClick={() => salvarCredencial(tribunal)}>
                       <Save size={11} className="mr-1" />Salvar
                     </Button>
                   </div>

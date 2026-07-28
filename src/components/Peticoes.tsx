@@ -125,8 +125,8 @@ function PeticaoForm({ initial, onSave, onCancel }: {
         </div>
       </div>
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onCancel} disabled={salvando}>Cancelar</Button>
-        <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700" onClick={salvar} disabled={salvando}>
+        <Button variant="cancel" size="sm" onClick={onCancel} disabled={salvando}>Cancelar</Button>
+        <Button size="sm" variant="success" onClick={salvar} disabled={salvando}>
           {salvando ? <><Loader2 size={14} className="animate-spin mr-1" /> Salvando…</> : 'Salvar'}
         </Button>
       </DialogFooter>
@@ -175,7 +175,7 @@ function ImportCSVPet({ onImport, onClose }: { onImport: (pets: Omit<Peticao, 'i
         </div>
       )}
       <DialogFooter>
-        <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button variant="cancel" size="sm" onClick={onClose}>Cancelar</Button>
         <Button size="sm" className="bg-[#2563eb]" disabled={!preview.length} onClick={() => { onImport(preview); onClose(); }}>Importar ({preview.length})</Button>
       </DialogFooter>
     </div>
@@ -546,7 +546,7 @@ export default function Peticoes() {
       <Dialog open={!!arquivarId} onOpenChange={() => setArquivarId(null)}>
         <DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Arquivar petição</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-600">A petição sai da lista ativa, mas <b>não é excluída</b> — você pode restaurá-la em "Arquivadas".</p>
-          <DialogFooter><Button variant="outline" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button><Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarPeticao(arquivarId)}>Arquivar</Button></DialogFooter>
+          <DialogFooter><Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button><Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarPeticao(arquivarId)}>Arquivar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <ProcessoDetalheDialog processo={verProc} onClose={() => setVerProc(null)} />
