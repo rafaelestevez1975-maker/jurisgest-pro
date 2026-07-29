@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { BarChart2, Download, Printer, Filter, X, ChevronDown, Scale, Clock } from 'lucide-react';
 import { TIPOS_ANDAMENTO, ProcessoDetalheDialog } from './Processos';
+import { exportarExcel } from '../lib/export';
 import { CopiarNumero } from './CopiarNumero';
 
 const AREAS: AreaDireito[] = ['cível', 'trabalhista', 'criminal', 'previdenciário', 'família', 'tributário', 'empresarial', 'administrativo', 'procon', 'outro'];
@@ -221,19 +222,12 @@ export default function Relatorios() {
     setBusca(''); setValorMin(''); setValorMax(''); setDataDe(''); setDataAte('');
   };
 
-  const exportarCSV = () => {
-    const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const cab = ['Número', 'Cliente', 'Polo do cliente', 'Parte contrária', 'Área', 'Objeto', 'Tribunal', 'Comarca', 'UF', 'Fase', 'Valor da causa', 'Valor em andamentos (filtro)', 'Status', 'Distribuição', 'Último andamento'];
-    const linhas = resultado.map(p => {
-      const ult = ultimosAndamentos(p, 1)[0];
-      return [p.numero, nomeCliente(p.clienteId), p.polo, p.parteContraria, p.area, p.objeto, p.tribunal, p.comarca, p.uf || '', p.fase, p.valorCausa ?? '', valorCasando(p) || '', p.status, fmtData(p.dataDistribuicao), ult ? `${fmtData(ult.data)} ${ult.descricao}` : ''].map(esc).join(';');
-    });
-    const csv = '﻿' + [cab.map(esc).join(';'), ...linhas].join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = `relatorio_processos_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click(); URL.revokeObjectURL(url);
-  };
+  const CAB_REL = ['Número', 'Cliente', 'Polo do cliente', 'Parte contrária', 'Área', 'Objeto', 'Tribunal', 'Comarca', 'UF', 'Fase', 'Valor da causa', 'Valor em andamentos (filtro)', 'Status', 'Distribuição', 'Último andamento'];
+  const linhasRel = () => resultado.map(p => {
+    const ult = ultimosAndamentos(p, 1)[0];
+    return [p.numero, nomeCliente(p.clienteId), p.polo, p.parteContraria, p.area, p.objeto, p.tribunal, p.comarca, p.uf || '', p.fase, p.valorCausa ?? '', valorCasando(p) || '', p.status, fmtData(p.dataDistribuicao), ult ? `${fmtData(ult.data)} ${ult.descricao}` : ''] as (string | number | null | undefined)[];
+  });
+  const exportarXls = () => exportarExcel(`relatorio_processos_${new Date().toISOString().split('T')[0]}`, CAB_REL, linhasRel(), 'Processos');
 
   const clienteOpts = clientes.map(c => ({ value: c.id, label: c.nome }));
   const areaOpts = AREAS.map(a => ({ value: a, label: a }));
@@ -249,8 +243,8 @@ export default function Relatorios() {
           <p className="text-sm text-gray-500">Filtre e gere relatórios detalhados da carteira de processos</p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="text-xs" onClick={exportarCSV} disabled={!resultado.length}>
-            <Download size={14} className="mr-1" /> Exportar CSV
+          <Button size="sm" variant="outline" className="text-xs" onClick={exportarXls} disabled={!resultado.length}>
+            <Download size={14} className="mr-1" /> Exportar Excel
           </Button>
           <Button size="sm" variant="outline" className="text-xs" onClick={() => window.print()} disabled={!resultado.length}>
             <Printer size={14} className="mr-1" /> Imprimir / PDF

@@ -51,8 +51,8 @@ const TOPICOS: Topico[] = [
   { id: 'busca-nome', modulo: 'Monitoramento', titulo: 'Descobrir processos pelo nome (Escavador)', chaves: 'busca nacional nome cliente parte escavador pago token descobrir processos cpf cnpj provedor',
     texto: 'Para descobrir TODOS os processos pelo nome de um cliente (não pela OAB), é preciso um provedor pago que indexa as partes (ex.: Escavador), pois o CNJ gratuito não busca por nome de parte. Cadastre o token do Escavador em Monitoramento para ativar. Processos já capturados pelo seu nome de procurador não se repetem.' },
 
-  { id: 'relatorios', modulo: 'Relatórios', titulo: 'Gerar relatórios de processos', chaves: 'relatório filtrar ativos inativos valor causa autor réu área objeto últimos andamentos exportar csv imprimir pdf',
-    texto: 'Em Relatórios você filtra a carteira por situação (ativos/inativos), área, cliente, polo (autor/réu), parte contrária, objeto, tribunal, fase, advogado, faixa de valor da causa e período. Cada processo mostra os últimos 3 andamentos. Dá para exportar em CSV e imprimir/gerar PDF.' },
+  { id: 'relatorios', modulo: 'Relatórios', titulo: 'Gerar relatórios de processos', chaves: 'relatório filtrar ativos inativos valor causa autor réu área objeto últimos andamentos exportar excel imprimir pdf',
+    texto: 'Em Relatórios você filtra a carteira por situação (ativos/inativos), área, cliente, polo (autor/réu), parte contrária, objeto, tribunal, fase, advogado, faixa de valor da causa e período. Cada processo mostra os últimos 3 andamentos. Dá para exportar em Excel e imprimir/gerar PDF.' },
 
   { id: 'config', modulo: 'Configurações', titulo: 'Configurar escritório, advogados e IA', chaves: 'configurações escritório oab advogados feriados tribunais chave api anthropic ia integração',
     texto: 'Em Configurações você define os dados do escritório, cadastra os advogados, os feriados municipais, as credenciais de tribunais e a chave de IA (Anthropic) usada na importação por imagem/texto e nesta Ajuda.' },

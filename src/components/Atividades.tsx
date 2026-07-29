@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search, FileSpreadsheet, FileText } from 'lucide-react';
+import { exportarExcel, exportarPDF } from '../lib/export';
 
 interface Atividade {
   id: string; usuario_email: string | null; usuario_nome: string | null;
@@ -53,20 +54,21 @@ export default function Atividades() {
 
   const fmt = (iso: string) => { try { return new Date(iso).toLocaleString('pt-BR'); } catch { return iso; } };
 
-  const exportarCsv = () => {
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const linhas = [['data_hora', 'usuario', 'email', 'acao', 'entidade', 'descricao'].join(';')];
-    filtradas.forEach(r => linhas.push([fmt(r.criado_em), r.usuario_nome || '', r.usuario_email || '', r.acao, r.entidade || '', r.descricao].map(esc).join(';')));
-    const blob = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'atividades.csv'; a.click();
+  const dadosExport = () => {
+    const headers = ['Data/Hora', 'Usuário', 'E-mail', 'Ação', 'Entidade', 'Descrição'];
+    const rows = filtradas.map(r => [fmt(r.criado_em), r.usuario_nome || '', r.usuario_email || '', r.acao, r.entidade || '', r.descricao] as (string | number | null | undefined)[]);
+    return { headers, rows };
   };
+  const exportarXls = () => { const { headers, rows } = dadosExport(); exportarExcel('atividades', headers, rows, 'Atividades'); };
+  const exportarPdf = () => { const { headers, rows } = dadosExport(); exportarPDF('Relatório de Atividades', headers, rows); };
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm text-gray-600">{filtradas.length} atividade(s){rows.length && filtradas.length !== rows.length ? ` de ${rows.length}` : ''}</p>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="h-9 text-xs" onClick={exportarCsv} disabled={!filtradas.length}>Exportar CSV</Button>
+          <Button size="sm" variant="outline" className="h-9 text-xs" onClick={exportarXls} disabled={!filtradas.length}><FileSpreadsheet size={13} className="mr-1" />Excel</Button>
+          <Button size="sm" variant="outline" className="h-9 text-xs" onClick={exportarPdf} disabled={!filtradas.length}><FileText size={13} className="mr-1" />PDF</Button>
           <Button size="sm" variant="outline" className="h-9 text-xs" onClick={carregar} disabled={carregando}><RefreshCw size={13} className={`mr-1 ${carregando ? 'animate-spin' : ''}`} />Atualizar</Button>
         </div>
       </div>
