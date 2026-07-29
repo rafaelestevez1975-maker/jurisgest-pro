@@ -62,6 +62,7 @@ type Action =
   | { type: 'UPDATE_ADVOGADO'; payload: Advogado }
   | { type: 'DELETE_ADVOGADO'; payload: string }
   | { type: 'ADD_FERIADO'; payload: Feriado }
+  | { type: 'UPDATE_FERIADO'; payload: Feriado }
   | { type: 'DELETE_FERIADO'; payload: string }
   | { type: 'UPDATE_ESCRITORIO'; payload: ConfigEscritorio }
   | { type: 'ADD_CREDENCIAL'; payload: CredencialTribunal }
@@ -94,6 +95,7 @@ function reducer(state: AppState, action: Action): AppState {
     case 'UPDATE_ADVOGADO': return { ...state, advogados: state.advogados.map(a => a.id === action.payload.id ? action.payload : a) };
     case 'DELETE_ADVOGADO': return { ...state, advogados: state.advogados.filter(a => a.id !== action.payload) };
     case 'ADD_FERIADO': return { ...state, feriadosMunicipais: [...state.feriadosMunicipais, action.payload] };
+    case 'UPDATE_FERIADO': return { ...state, feriadosMunicipais: state.feriadosMunicipais.map(f => f.id === action.payload.id ? action.payload : f) };
     case 'DELETE_FERIADO': return { ...state, feriadosMunicipais: state.feriadosMunicipais.filter(f => f.id !== action.payload) };
     case 'UPDATE_ESCRITORIO': return { ...state, escritorio: action.payload };
     case 'ADD_CREDENCIAL': return { ...state, credenciais: [...state.credenciais, action.payload] };
@@ -147,6 +149,7 @@ function syncToSupabase(action: Action, nextState: AppState) {
       reportErro(db.deleteAdvogado(action.payload), 'exclusão de advogado'); break;
 
     case 'ADD_FERIADO':
+    case 'UPDATE_FERIADO':
       reportErro(db.upsertFeriado(action.payload), 'feriado'); break;
     case 'DELETE_FERIADO':
       reportErro(db.deleteFeriado(action.payload), 'exclusão de feriado'); break;
@@ -203,6 +206,7 @@ function descreverAtividade(action: Action): { acao: string; entidade: string; e
     case 'ADD_CREDENCIAL':
     case 'UPDATE_CREDENCIAL': return { acao: 'editar', entidade: 'configuracao', descricao: 'Atualizou credencial de tribunal' };
     case 'ADD_FERIADO': return { acao: 'criar', entidade: 'configuracao', descricao: 'Adicionou feriado municipal' };
+    case 'UPDATE_FERIADO': return { acao: 'editar', entidade: 'configuracao', descricao: `${(o as Feriado)?.ativo === false ? 'Inativou' : 'Reativou'} feriado municipal` };
     case 'DELETE_FERIADO': return { acao: 'excluir', entidade: 'configuracao', descricao: 'Removeu feriado municipal' };
     case 'IMPORT_CLIENTES': return { acao: 'importar', entidade: 'cliente', descricao: `Importou ${Array.isArray(p) ? p.length : 0} cliente(s)` };
     case 'IMPORT_PROCESSOS': return { acao: 'importar', entidade: 'processo', descricao: `Importou ${Array.isArray(p) ? p.length : 0} processo(s)` };

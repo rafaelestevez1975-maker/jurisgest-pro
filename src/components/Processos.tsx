@@ -1497,7 +1497,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
         </TabsContent>
         <TabsContent value="documentos" className="mt-3 space-y-2">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-gray-500">{documentos.length} documento(s) anexado(s)</p>
+            <p className="text-xs text-gray-500">{documentos.filter(d => !d.arquivado).length} documento(s) ativo(s){documentos.some(d => d.arquivado) ? ` · ${documentos.filter(d => d.arquivado).length} inativo(s)` : ''}</p>
             {usuario.podeContribuir && (
               <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
                 {subindoDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar documento
@@ -1506,21 +1506,24 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
             )}
           </div>
           {documentos.length === 0 && <p className="text-xs text-gray-400">Nenhum documento anexado. Use "Anexar" para guardar defesas, contratos, provas, comprovantes — ficam salvos para consulta futura.</p>}
-          {documentos.map(d => (
-            <div key={d.id} className="flex items-center justify-between border rounded p-2 text-xs gap-2">
+          {[...documentos].sort((a, b) => Number(a.arquivado) - Number(b.arquivado)).map(d => (
+            <div key={d.id} className={`flex items-center justify-between border rounded p-2 text-xs gap-2 ${d.arquivado ? 'bg-gray-50 opacity-75' : ''}`}>
               <div className="flex items-center gap-2 min-w-0">
                 <FileText size={14} className="text-gray-500 flex-shrink-0" />
                 <div className="min-w-0">
-                  <p className="font-medium truncate">{d.nome}</p>
+                  <p className={`font-medium truncate ${d.arquivado ? 'line-through text-gray-400' : ''}`}>{d.nome}</p>
                   <p className="text-gray-400 truncate">{d.arquivoNome}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
+                {d.arquivado && <Badge className="bg-slate-200 text-slate-600 text-[10px]">inativo</Badge>}
                 <Badge variant="outline" className="text-[10px] capitalize">{d.tipo}</Badge>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700" title="Baixar / abrir" onClick={() => baixarDoc(d)}><Download size={13} /></Button>
-                {usuario.podeEditar && (
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400 hover:text-red-500" title="Remover" onClick={async () => { await db.deleteDocumento(d.id); carregarDocs(); toast.success('Documento removido.'); logAcao('excluir', 'documento', `Removeu documento "${d.nome}" do processo ${processo.numero}`, processo.id); }}><X size={13} /></Button>
-                )}
+                {usuario.podeEditar && (d.arquivado ? (
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2 text-green-600 hover:text-green-700" title="Reativar documento" onClick={async () => { await db.setDocumentoArquivado(d.id, false); carregarDocs(); toast.success('Documento reativado.'); logAcao('editar', 'documento', `Reativou documento "${d.nome}" do processo ${processo.numero}`, processo.id); }}>Reativar</Button>
+                ) : (
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2 text-slate-400 hover:text-amber-600" title="Inativar (o documento não é excluído, apenas fica inativo)" onClick={async () => { await db.setDocumentoArquivado(d.id, true); carregarDocs(); toast.success('Documento inativado.'); logAcao('editar', 'documento', `Inativou documento "${d.nome}" do processo ${processo.numero}`, processo.id); }}>Inativar</Button>
+                ))}
               </div>
             </div>
           ))}

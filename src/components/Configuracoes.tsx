@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Plus, Trash2, Building, Users, CalendarDays, Shield, Save, Brain, Eye, EyeOff, KeyRound, Loader2, Activity } from 'lucide-react';
+import { Plus, Building, Users, CalendarDays, Shield, Save, Brain, Eye, EyeOff, KeyRound, Loader2, Activity, Edit } from 'lucide-react';
 import Atividades from './Atividades';
+import { MultiSelect } from './Relatorios';
 import { toast } from 'sonner';
 import { db } from '../lib/db';
 
@@ -23,6 +24,7 @@ function gerarSenha(len = 12): string {
 
 const TRIBUNAIS_CRED = ['TJSP','TJRJ','TJMG','TJRS','TJPR','TJSC','TRT15','TRF3','STJ','STF','DataJud/CNJ'];
 const AREAS: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','procon','outro'];
+const AREA_OPTS = AREAS.map(a => ({ value: a, label: a.charAt(0).toUpperCase() + a.slice(1) }));
 
 function AreaChips({ selected, onToggle }: { selected: AreaDireito[]; onToggle: (a: AreaDireito) => void }) {
   return (
@@ -52,7 +54,20 @@ export default function Configuracoes() {
   const [resetPwd, setResetPwd] = useState('');
   const [resetting, setResetting] = useState(false);
   const [novoFeriado, setNovoFeriado] = useState({ data: '', descricao: '' });
-  const [deleteAdvId, setDeleteAdvId] = useState<string | null>(null);
+  // Edição de dados do usuário (nome/OAB/e-mail)
+  const [editAdvId, setEditAdvId] = useState<string | null>(null);
+  const [editAdv, setEditAdv] = useState<{ nome: string; oab: string; email: string }>({ nome: '', oab: '', email: '' });
+  const abrirEditAdv = (adv: Advogado) => { setEditAdvId(adv.id); setEditAdv({ nome: adv.nome, oab: adv.oab || '', email: adv.email || '' }); };
+  const salvarEditAdv = (adv: Advogado) => {
+    if (!editAdv.nome.trim()) { toast.error('Informe o nome.'); return; }
+    dispatch({ type: 'UPDATE_ADVOGADO', payload: { ...adv, nome: editAdv.nome.trim(), oab: editAdv.oab.trim(), email: editAdv.email.trim().toLowerCase() } });
+    setEditAdvId(null);
+    toast.success('Usuário atualizado.');
+  };
+  const setAtivoAdv = (adv: Advogado, ativo: boolean) => {
+    dispatch({ type: 'UPDATE_ADVOGADO', payload: { ...adv, ativo } });
+    toast.success(ativo ? 'Acesso reativado.' : 'Acesso inativado (o usuário não é excluído).');
+  };
   const [credEdit, setCredEdit] = useState<Record<string, { login: string; token: string }>>(
     Object.fromEntries(state.credenciais.map(c => [c.tribunal, { login: c.login, token: c.token }]))
   );
@@ -101,10 +116,8 @@ export default function Configuracoes() {
     setResetFor(null); setResetPwd('');
   };
 
-  const toggleAreaAdv = (adv: Advogado, area: AreaDireito) => {
-    const cur = adv.areas || [];
-    const next = cur.includes(area) ? cur.filter(a => a !== area) : [...cur, area];
-    dispatch({ type: 'UPDATE_ADVOGADO', payload: { ...adv, areas: next } });
+  const setAreasAdv = (adv: Advogado, areas: AreaDireito[]) => {
+    dispatch({ type: 'UPDATE_ADVOGADO', payload: { ...adv, areas } });
   };
 
   const setPapelAdv = (adv: Advogado, papel: PapelUsuario) => {
@@ -201,25 +214,42 @@ export default function Configuracoes() {
               </div>
               {state.advogados.map(adv => {
                 const papel = adv.papel || 'advogado';
+                const inativo = adv.ativo === false;
                 return (
-                <div key={adv.id} className="border rounded p-3">
+                <div key={adv.id} className={`border rounded p-3 ${inativo ? 'bg-gray-50 opacity-80' : ''}`}>
+                  {editAdvId === adv.id ? (
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold text-[#1e3a5f]">Editar usuário</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div><Label className="text-xs">Nome</Label><Input className="mt-1 h-8 text-sm" value={editAdv.nome} onChange={e => setEditAdv(a => ({ ...a, nome: e.target.value }))} /></div>
+                        <div><Label className="text-xs">OAB</Label><Input className="mt-1 h-8 text-sm" value={editAdv.oab} onChange={e => setEditAdv(a => ({ ...a, oab: e.target.value }))} /></div>
+                      </div>
+                      <div><Label className="text-xs">E-mail de login</Label><Input type="email" className="mt-1 h-8 text-sm" value={editAdv.email} onChange={e => setEditAdv(a => ({ ...a, email: e.target.value }))} /></div>
+                      <div className="flex gap-2"><Button size="sm" variant="success" className="h-7 text-xs" onClick={() => salvarEditAdv(adv)}>Salvar</Button><Button size="sm" variant="cancel" className="h-7 text-xs" onClick={() => setEditAdvId(null)}>Cancelar</Button></div>
+                    </div>
+                  ) : (
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold flex items-center gap-2 flex-wrap">
-                        {adv.nome}
+                        <span className={inativo ? 'line-through text-gray-400' : ''}>{adv.nome}</span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${papel === 'admin' ? 'bg-[#1e3a5f] text-white' : papel === 'visualizador' ? 'bg-amber-100 text-amber-700' : papel === 'operacao' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{PAPEL_LABEL[papel]}</span>
+                        {inativo && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">inativo</span>}
                       </p>
                       <p className="text-xs text-gray-500 truncate">{adv.oab}{adv.email ? ` · ${adv.email}` : ' · sem e-mail (perfil não será reconhecido no login)'}</p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400 hover:text-[#2563eb]" title="Editar dados do usuário" onClick={() => abrirEditAdv(adv)}><Edit size={13} /></Button>
                       {adv.email && (
                         <Button variant="outline" size="sm" className="h-7 text-[11px] px-2" onClick={() => { setResetFor(adv); setResetPwd(''); }}>
                           <KeyRound size={12} className="mr-1" />Redefinir senha
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => setDeleteAdvId(adv.id)}><Trash2 size={13} /></Button>
+                      {inativo
+                        ? <Button variant="ghost" size="sm" className="h-7 text-[11px] px-2 text-green-600 hover:text-green-700" onClick={() => setAtivoAdv(adv, true)}>Reativar</Button>
+                        : <Button variant="ghost" size="sm" className="h-7 text-[11px] px-2 text-amber-600 hover:text-amber-700" title="Inativar acesso (o usuário não é excluído)" onClick={() => setAtivoAdv(adv, false)}>Inativar</Button>}
                     </div>
                   </div>
+                  )}
                   <div className="mt-2 grid sm:grid-cols-[180px_1fr] gap-3">
                     <div>
                       <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Perfil de acesso</p>
@@ -236,7 +266,7 @@ export default function Configuracoes() {
                     <div>
                       <p className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Áreas visíveis <span className="text-gray-300 normal-case">{papel === 'admin' ? '(admin vê todas)' : '(sem marcar = vê todas)'}</span></p>
                       <div className={papel === 'admin' ? 'opacity-40 pointer-events-none' : ''}>
-                        <AreaChips selected={adv.areas || []} onToggle={a => toggleAreaAdv(adv, a)} />
+                        <MultiSelect label="Áreas" options={AREA_OPTS} selected={adv.areas || []} onChange={s => setAreasAdv(adv, s as AreaDireito[])} width="w-full" emptyLabel="Todas as áreas" />
                       </div>
                     </div>
                   </div>
@@ -273,7 +303,7 @@ export default function Configuracoes() {
                   </div>
                   <div className="col-span-2">
                     <Label className="text-xs">Áreas visíveis <span className="text-gray-400">(sem marcar = vê todas)</span></Label>
-                    <div className="mt-1"><AreaChips selected={novoAdv.areas} onToggle={a => setNovoAdv(prev => ({ ...prev, areas: prev.areas.includes(a) ? prev.areas.filter(x => x !== a) : [...prev.areas, a] }))} /></div>
+                    <div className="mt-1"><MultiSelect label="Áreas" options={AREA_OPTS} selected={novoAdv.areas} onChange={s => setNovoAdv(prev => ({ ...prev, areas: s as AreaDireito[] }))} width="w-full" emptyLabel="Todas as áreas" /></div>
                   </div>
                 </div>
                 <Button size="sm" variant="success" className="h-8 text-xs" onClick={addAdvogado} disabled={savingUser}>
@@ -283,17 +313,6 @@ export default function Configuracoes() {
               </div>
             </CardContent>
           </Card>
-
-          <Dialog open={!!deleteAdvId} onOpenChange={() => setDeleteAdvId(null)}>
-            <DialogContent className="max-w-sm">
-              <DialogHeader><DialogTitle>Remover acesso</DialogTitle></DialogHeader>
-              <p className="text-sm text-gray-600">Remover este usuário do JurisGest? Ele perde o acesso ao sistema. (A conta de login continua existindo no Supabase e pode ser recriada aqui depois.)</p>
-              <DialogFooter>
-                <Button variant="cancel" size="sm" onClick={() => setDeleteAdvId(null)}>Cancelar</Button>
-                <Button variant="destructive" size="sm" onClick={() => { if (deleteAdvId) { dispatch({ type: 'DELETE_ADVOGADO', payload: deleteAdvId }); setDeleteAdvId(null); toast.success('Acesso removido.'); } }}>Remover</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
 
           <Dialog open={!!resetFor} onOpenChange={(o) => { if (!o) { setResetFor(null); setResetPwd(''); } }}>
             <DialogContent className="max-w-sm">
@@ -326,13 +345,18 @@ export default function Configuracoes() {
                 <p className="text-xs text-gray-400 py-2">Nenhum feriado municipal cadastrado.</p>
               ) : (
                 <div className="space-y-2">
-                  {state.feriadosMunicipais.sort((a, b) => a.data.localeCompare(b.data)).map(f => (
-                    <div key={f.id} className="flex items-center justify-between border rounded p-2 text-xs">
-                      <span className="font-medium">{f.data}</span>
-                      <span className="flex-1 ml-3 text-gray-600">{f.descricao}</span>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500" onClick={() => { dispatch({ type: 'DELETE_FERIADO', payload: f.id }); toast.success('Feriado removido.'); }}><Trash2 size={11} /></Button>
+                  {[...state.feriadosMunicipais].sort((a, b) => Number(a.ativo === false) - Number(b.ativo === false) || a.data.localeCompare(b.data)).map(f => {
+                    const inativo = f.ativo === false;
+                    return (
+                    <div key={f.id} className={`flex items-center justify-between border rounded p-2 text-xs ${inativo ? 'bg-gray-50 opacity-75' : ''}`}>
+                      <span className={`font-medium ${inativo ? 'line-through text-gray-400' : ''}`}>{f.data}</span>
+                      <span className={`flex-1 ml-3 ${inativo ? 'line-through text-gray-400' : 'text-gray-600'}`}>{f.descricao}</span>
+                      {inativo
+                        ? <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-green-600 hover:text-green-700" onClick={() => { dispatch({ type: 'UPDATE_FERIADO', payload: { ...f, ativo: true } }); toast.success('Feriado reativado.'); }}>Reativar</Button>
+                        : <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-amber-600 hover:text-amber-700" title="Inativar (não é excluído; deixa de contar no cálculo)" onClick={() => { dispatch({ type: 'UPDATE_FERIADO', payload: { ...f, ativo: false } }); toast.success('Feriado inativado.'); }}>Inativar</Button>}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               <div className="border rounded p-3 bg-blue-50 space-y-2">

@@ -54,6 +54,7 @@ export interface Documento {
   arquivoPath: string;
   arquivoNome: string;
   criadoEm: string;
+  arquivado?: boolean;   // inativado (nunca é deletado de fato)
 }
 
 export type OrigemProcesso = 'manual' | 'auto_intimacao' | 'imagem';
@@ -160,6 +161,7 @@ export interface Advogado {
   email: string;           // deve casar com o e-mail de login (Supabase auth) para o perfil ser reconhecido
   papel?: PapelUsuario;    // perfil de acesso (default: advogado)
   areas?: AreaDireito[];   // áreas de atuação — escopam o que o usuário vê em todo o sistema
+  ativo?: boolean;         // false = acesso inativado (nunca é deletado); bloqueia login
 }
 
 export interface Notificacao {
@@ -178,6 +180,7 @@ export interface Feriado {
   id: string;
   data: string;
   descricao: string;
+  ativo?: boolean;   // false = inativado (nunca é deletado); não conta no cálculo
 }
 
 export interface ConfigEscritorio {

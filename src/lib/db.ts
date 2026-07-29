@@ -326,6 +326,7 @@ export async function loadState(): Promise<AppState> {
       email: r.email as string,
       papel: (r.papel as Advogado['papel']) || 'advogado',
       areas: Array.isArray(r.areas) ? (r.areas as Advogado['areas']) : [],
+      ativo: r.ativo === undefined ? true : !!r.ativo,
     })),
     clientes: (cliRows ?? []).map(r => toCliente(r as Record<string, unknown>)),
     processos: (procRows ?? []).map(r =>
@@ -338,6 +339,7 @@ export async function loadState(): Promise<AppState> {
       id: r.id as string,
       data: r.data as string,
       descricao: r.descricao as string,
+      ativo: r.ativo === undefined ? true : !!r.ativo,
     })),
     credenciais: (credRows ?? []).map(r => ({
       tribunal: r.tribunal as string,
@@ -427,6 +429,7 @@ export const db = {
       id: r.id as string, processoId: r.processo_id as string, nome: r.nome as string,
       tipo: r.tipo as string, arquivoPath: r.arquivo_path as string,
       arquivoNome: r.arquivo_nome as string, criadoEm: r.criado_em as string,
+      arquivado: !!r.arquivado,
     }));
   },
   uploadDocumento: async (processoId: string, file: File, tipo = 'documento') => {
@@ -439,7 +442,8 @@ export const db = {
     const { data } = await supabase.storage.from('processos').createSignedUrl(path, 3600);
     return data?.signedUrl ?? '';
   },
-  deleteDocumento: (id: string) => supabase.from('documentos').delete().eq('id', id),
+  // Documentos nunca são deletados — apenas inativados (arquivado = true/false).
+  setDocumentoArquivado: (id: string, arquivado: boolean) => supabase.from('documentos').update({ arquivado }).eq('id', id),
 
   // prazos
   upsertPrazo: (p: Prazo) => supabase.from('prazos').upsert(fromPrazo(p)),

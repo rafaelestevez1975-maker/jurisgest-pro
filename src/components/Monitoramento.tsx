@@ -70,7 +70,7 @@ export default function Monitoramento() {
     const [{ data: cfg }, { data: hist }, { data: pts }] = await Promise.all([
       supabase.from('robo_config').select('*').limit(1),
       supabase.from('sincronizacoes').select('*').order('executado_em', { ascending: false }).limit(10),
-      supabase.from('partes_monitoradas').select('*').order('nome'),
+      supabase.from('partes_monitoradas').select('*').neq('ativo', false).order('nome'),
     ]);
     if (cfg?.[0]) { setConfig(cfg[0] as RoboConfig); setTokenLocal((cfg[0] as RoboConfig).escavador_token || ''); }
     setHistorico((hist || []) as Sincronizacao[]);
@@ -205,8 +205,9 @@ export default function Monitoramento() {
     setCliNome(''); setCliDoc(''); toast.success('Cliente cadastrado para monitoramento.'); carregar();
   };
 
+  // Nunca deleta — apenas inativa (deixa de ser monitorada, mas o registro permanece).
   const remover = async (id: string) => {
-    await supabase.from('partes_monitoradas').delete().eq('id', id);
+    await supabase.from('partes_monitoradas').update({ ativo: false }).eq('id', id);
     carregar();
   };
 
@@ -390,7 +391,7 @@ export default function Monitoramento() {
                       {buscandoId === p.id ? <Loader2 size={13} className="animate-spin mr-1" /> : <Search size={13} className="mr-1" />}
                       Buscar
                     </Button>
-                    {usuario.podeEditar && <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>}
+                    {usuario.podeEditar && <button className="text-gray-300 hover:text-amber-600 p-1" onClick={() => remover(p.id)} title="Inativar (deixa de monitorar; não é excluído)"><Trash2 size={14} /></button>}
                   </div>
                 </div>
               ))}
@@ -421,7 +422,7 @@ export default function Monitoramento() {
                       {buscandoId === p.id ? <Loader2 size={13} className="animate-spin mr-1" /> : <Search size={13} className="mr-1" />}
                       Buscar
                     </Button>
-                    {usuario.podeEditar && <button className="text-gray-300 hover:text-red-500 p-1" onClick={() => remover(p.id)} title="Remover"><Trash2 size={14} /></button>}
+                    {usuario.podeEditar && <button className="text-gray-300 hover:text-amber-600 p-1" onClick={() => remover(p.id)} title="Inativar (deixa de monitorar; não é excluído)"><Trash2 size={14} /></button>}
                   </div>
                 </div>
               ))}

@@ -309,7 +309,7 @@ export default function Publicacoes() {
   // Abre "Gerar Prazo" já sugerindo descrição e data (detecta o prazo no texto)
   const abrirGerarPrazo = (pub: Publicacao) => {
     const dias = detectarPrazoDias(pub.conteudo);
-    const feriados = state.feriadosMunicipais.map(f => f.data);
+    const feriados = state.feriadosMunicipais.filter(f => f.ativo !== false).map(f => f.data);
     const hoje = new Date().toISOString().split('T')[0];
     setPrazoDiasDetectados(dias);
     // Rótulo do prazo = nome da PARTE ADVERSA (não do nosso cliente). Prioriza a parte
