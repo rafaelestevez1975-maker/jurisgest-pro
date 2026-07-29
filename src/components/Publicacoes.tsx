@@ -91,17 +91,37 @@ function DateRangePicker({ inicio, fim, onChange }: { inicio: string; fim: strin
   );
 }
 
-// Detecta o prazo (nº de dias) mencionado no texto da intimação
-function detectarPrazoDias(texto: string): number | null {
+// Soma dias CORRIDOS a uma data ISO (yyyy-mm-dd) — usado para prazos em horas.
+function addDiasCorridos(isoDate: string, dias: number): string {
+  const d = new Date(isoDate + 'T12:00:00');
+  d.setDate(d.getDate() + dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Detecta o prazo mencionado no texto — em DIAS (úteis, salvo indicação) ou HORAS.
+// IMPORTANTE: exige a palavra "dias" após o número, para não confundir "48 horas"
+// (prazo em horas) com "48 dias". Horas só são detectadas junto da palavra "prazo",
+// para não capturar horários de audiência ("às 14 horas").
+function detectarPrazo(texto: string): { valor: number; unidade: 'dias' | 'horas' } | null {
   if (!texto) return null;
   const t = texto.toLowerCase();
-  const m = t.match(/(?:no\s+)?prazo\s+(?:legal\s+|comum\s+|de\s+lei\s+)?de\s+(\d{1,3})/)
+  // 1) Prazo em HORAS (ex.: "prazo de 48 horas", "no prazo de 24h")
+  const mh = t.match(/prazo[^.]{0,30}?(\d{1,3})\s*(?:\([^)]*\)\s*)?(?:horas?|h\b)/)
+    || t.match(/(\d{1,3})\s*horas?\s*(?:úteis|uteis|corridas|corridos)/);
+  if (mh) {
+    const h = parseInt(mh[1], 10);
+    if (h >= 1 && h <= 240) return { valor: h, unidade: 'horas' };
+  }
+  // 2) Prazo em DIAS — sempre exige a palavra "dias" após o número
+  const md = t.match(/(?:no\s+)?prazo\s+(?:legal\s+|comum\s+|de\s+lei\s+)?de\s+(\d{1,3})\s*(?:\([^)]*\)\s*)?dias/)
     || t.match(/(?:\bem|dentro\s+de|no\s+prazo\s+de|prazo\s+de)\s+(\d{1,3})\s*(?:\([^)]*\)\s*)?dias/)
     || t.match(/(\d{1,3})\s*\(?[^)]*\)?\s*dias\s*(?:úteis|uteis|corridos)/)
     || t.match(/prazo[^.]{0,25}?(\d{1,3})\s*dias/);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return n >= 1 && n <= 90 ? n : null;
+  if (md) {
+    const d = parseInt(md[1], 10);
+    if (d >= 1 && d <= 60) return { valor: d, unidade: 'dias' };
+  }
+  return null;
 }
 
 const TRIBUNAIS_MONIT = [
@@ -188,6 +208,7 @@ export default function Publicacoes() {
   const { state, dispatch, reload, usuario } = useApp();
   const [capturando, setCapturando] = useState(false);
   const [prazoDiasDetectados, setPrazoDiasDetectados] = useState<number | null>(null);
+  const [prazoUnidade, setPrazoUnidade] = useState<'dias' | 'horas'>('dias');
   const [filterStatus, setFilterStatus] = useState<string>('ativas');
   const [filterTribunal, setFilterTribunal] = useState<string>('todos');
   const [filterVinculo, setFilterVinculo] = useState<string>('todos');
@@ -308,10 +329,11 @@ export default function Publicacoes() {
 
   // Abre "Gerar Prazo" já sugerindo descrição e data (detecta o prazo no texto)
   const abrirGerarPrazo = (pub: Publicacao) => {
-    const dias = detectarPrazoDias(pub.conteudo);
+    const det = detectarPrazo(pub.conteudo);
     const feriados = state.feriadosMunicipais.filter(f => f.ativo !== false).map(f => f.data);
     const hoje = new Date().toISOString().split('T')[0];
-    setPrazoDiasDetectados(dias);
+    setPrazoDiasDetectados(det ? det.valor : null);
+    setPrazoUnidade(det ? det.unidade : 'dias');
     // Rótulo do prazo = nome da PARTE ADVERSA (não do nosso cliente). Prioriza a parte
     // contrária do processo vinculado; senão tira das partes da publicação (excluindo o cliente); por fim o tribunal.
     const procVinc = state.processos.find(p => p.id === pub.processoId);
@@ -329,10 +351,17 @@ export default function Publicacoes() {
     // Prazo fatal = N dias úteis contados da PUBLICAÇÃO (dia útil seguinte à disponibilização/intimação),
     // conforme regra do CNPC (art. 224). Base = data da intimação (não "hoje").
     const baseIntimacao = pub.data || hoje;
-    const limite = dias ? adicionarDiasUteis(adicionarDiasUteis(baseIntimacao, 1, feriados), dias, feriados) : '';
+    // Dias: N dias úteis a partir do dia útil seguinte à intimação (CPC art. 224).
+    // Horas: prazo em horas conta em tempo corrido -> converte para dias corridos (arredonda p/ cima).
+    let limite = '';
+    if (det) {
+      limite = det.unidade === 'horas'
+        ? addDiasCorridos(baseIntimacao, Math.max(1, Math.ceil(det.valor / 24)))
+        : adicionarDiasUteis(adicionarDiasUteis(baseIntimacao, 1, feriados), det.valor, feriados);
+    }
     setPrazoIntimacao(baseIntimacao);
     setPrazoLimite(limite);
-    setPrazoData(limite || (dias ? adicionarDiasUteis(hoje, dias, feriados) : ''));
+    setPrazoData(limite);
     setPrazoTipo(/audi[êe]ncia/i.test(pub.conteudo || '') ? 'audiência' : 'prazo_fatal');
     // tenta extrair o horário da audiência do texto (ex.: "às 14:30", "14h30", "09h00")
     const mHora = (pub.conteudo || '').match(/\b([01]?\d|2[0-3])\s*[:h]\s*([0-5]\d)\b/);
@@ -423,7 +452,7 @@ export default function Publicacoes() {
     } else {
       setGerarPrazoId(null);
       setPrazoDescricao(''); setPrazoData(''); setPrazoResp('');
-      setPrazoTipo('prazo_fatal'); setPrazoHora(''); setPrazoDiasDetectados(null); setPrazoUrgente(false);
+      setPrazoTipo('prazo_fatal'); setPrazoHora(''); setPrazoDiasDetectados(null); setPrazoUnidade('dias'); setPrazoUrgente(false);
     }
   };
 
@@ -803,7 +832,7 @@ export default function Publicacoes() {
             })()}
             {prazoDiasDetectados != null && (
               <p className="text-xs text-green-800 bg-green-50 border border-green-200 rounded px-2 py-1.5 flex items-center gap-1.5">
-                <Sparkles size={12} className="text-green-600" /> Detectei <b>prazo de {prazoDiasDetectados} dias</b> na intimação — a data limite já foi sugerida (em dias úteis). Confira e ajuste se necessário.
+                <Sparkles size={12} className="text-green-600" /> Detectei <b>prazo de {prazoDiasDetectados} {prazoUnidade}</b> na intimação — a data limite já foi sugerida ({prazoUnidade === 'horas' ? 'em dias corridos' : 'em dias úteis'}). Confira e ajuste se necessário.
               </p>
             )}
             <div>
@@ -831,7 +860,7 @@ export default function Publicacoes() {
                 <div className="mt-1.5 space-y-1">
                   <p className="text-xs font-semibold text-red-600">
                     Data limite (prazo fatal): {new Date(prazoLimite + 'T12:00:00').toLocaleDateString('pt-BR')}
-                    {prazoDiasDetectados ? <span className="font-normal text-red-500"> — {prazoDiasDetectados} dias úteis a partir da intimação de {new Date(prazoIntimacao + 'T12:00:00').toLocaleDateString('pt-BR')}</span> : null}
+                    {prazoDiasDetectados ? <span className="font-normal text-red-500"> — {prazoDiasDetectados} {prazoUnidade}{prazoUnidade === 'horas' ? ' (corridas)' : ' úteis'} a partir da intimação de {new Date(prazoIntimacao + 'T12:00:00').toLocaleDateString('pt-BR')}</span> : null}
                   </p>
                   {prazoData && prazoData > prazoLimite && (
                     <p className="text-xs font-bold text-red-700 bg-red-50 border border-red-300 rounded px-2 py-1.5">

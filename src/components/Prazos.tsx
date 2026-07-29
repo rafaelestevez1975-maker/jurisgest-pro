@@ -557,11 +557,13 @@ export default function Prazos() {
             const proc = state.processos.find(p => p.id === prazo.processoId);
             const [data, hora] = prazo.dataHora.split('T');
             const concluido = prazo.status === 'cumprido' || prazo.status === 'cancelado';
+            // Pode editar: admin/advogado, OU quem é responsável / agendou (mesmo Operação).
+            const podeEdit = usuario.podeEditar || (usuario.podeContribuir && (prazo.responsavel === usuario.nome || prazo.agendadoPor === usuario.nome));
             return (
               <Card key={prazo.id}
-                onClick={usuario.podeEditar ? () => { setEditPrazo(prazo); setDialogOpen(true); } : undefined}
-                title={usuario.podeEditar ? 'Clique para abrir e editar o agendamento' : undefined}
-                className={`border-l-4 ${urgencyStyle(dias, prazo.status)} ${prazo.urgente && !concluido ? 'ring-2 ring-red-500 !border-l-red-600 bg-red-50/60' : ''} ${concluido ? 'opacity-70' : ''} ${usuario.podeEditar ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}>
+                onClick={podeEdit ? () => { setEditPrazo(prazo); setDialogOpen(true); } : undefined}
+                title={podeEdit ? 'Clique para abrir e editar o agendamento' : undefined}
+                className={`border-l-4 ${urgencyStyle(dias, prazo.status)} ${prazo.urgente && !concluido ? 'ring-2 ring-red-500 !border-l-red-600 bg-red-50/60' : ''} ${concluido ? 'opacity-70' : ''} ${podeEdit ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}>
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">

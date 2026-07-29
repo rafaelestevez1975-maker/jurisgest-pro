@@ -1379,7 +1379,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                     <span className="ml-1.5 inline-block bg-green-100 text-green-700 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">R$ {it.valor!.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   )}
                 </div>
-                {usuario.podeEditar && it.movId && (
+                {usuario.podeContribuir && it.movId && (
                   <button title="Editar andamento" className="flex-shrink-0 text-gray-300 hover:text-[#2563eb] transition-colors" onClick={() => { const m = processo.movimentacoes.find(x => x.id === it.movId); if (m) iniciarEditMov(m); }}><Edit size={12} /></button>
                 )}
               </div>
@@ -1446,7 +1446,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <Badge variant="outline" className="capitalize text-[10px]">{pr.status}</Badge>
-                {usuario.podeEditar && !concluido && (
+                {(usuario.podeEditar || (usuario.podeContribuir && (pr.responsavel === usuario.nome || pr.agendadoPor === usuario.nome))) && !concluido && (
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-400 hover:text-[#2563eb]" title="Editar prazo" onClick={() => iniciarEditPrazo(pr)}><Edit size={13} /></Button>
                 )}
                 {usuario.podeEditar && (concluido ? (
