@@ -427,6 +427,18 @@ export default function Prazos() {
     setCienciaNome('');
   };
 
+  // Abre o agendamento para edição. Se quem abre é o RESPONSÁVEL e ainda não deu
+  // ciência, registra a ciência automaticamente (abrir = visualizou). Assim quem
+  // agendou consegue ver se a pessoa designada realmente viu a tarefa.
+  const abrirAgendamento = (prazo: Prazo) => {
+    if (prazo.responsavel === usuario.nome && !prazo.vistoEm && prazo.status === 'pendente') {
+      dispatch({ type: 'UPDATE_PRAZO', payload: { ...prazo, vistoEm: new Date().toISOString(), vistoPor: usuario.nome } });
+      toast.success('Ciência registrada — quem agendou verá que você visualizou.');
+    }
+    setEditPrazo(prazo);
+    setDialogOpen(true);
+  };
+
   const pendentes7 = state.prazos.filter(p => p.status === 'pendente' && diasRestantes(p.dataHora) <= 7 && diasRestantes(p.dataHora) >= 0).length;
   const aguardandoCiencia = state.prazos.filter(p => p.status === 'pendente' && !p.vistoEm).length;
 
@@ -561,7 +573,7 @@ export default function Prazos() {
             const podeEdit = usuario.podeEditar || (usuario.podeContribuir && (prazo.responsavel === usuario.nome || prazo.agendadoPor === usuario.nome));
             return (
               <Card key={prazo.id}
-                onClick={podeEdit ? () => { setEditPrazo(prazo); setDialogOpen(true); } : undefined}
+                onClick={podeEdit ? () => abrirAgendamento(prazo) : undefined}
                 title={podeEdit ? 'Clique para abrir e editar o agendamento' : undefined}
                 className={`border-l-4 ${urgencyStyle(dias, prazo.status)} ${prazo.urgente && !concluido ? 'ring-2 ring-red-500 !border-l-red-600 bg-red-50/60' : ''} ${concluido ? 'opacity-70' : ''} ${podeEdit ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}>
                 <CardContent className="p-3">
@@ -643,6 +655,20 @@ export default function Prazos() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle className="text-[#1e3a5f]">{editPrazo ? 'Editar Prazo' : 'Novo Prazo'}</DialogTitle></DialogHeader>
+          {editPrazo && (
+            <div className="flex flex-wrap items-center gap-2 text-[11px] -mt-1 mb-1">
+              {editPrazo.vistoEm
+                ? <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 rounded px-2 py-1"><Eye size={12} /> Visualizado por {editPrazo.vistoPor?.split(' ')[0] || 'responsável'} em {new Date(editPrazo.vistoEm).toLocaleDateString('pt-BR')}</span>
+                : <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1"><EyeOff size={12} /> Ainda NÃO visualizado pelo responsável</span>}
+              {editPrazo.status === 'cumprido'
+                ? <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 rounded px-2 py-1"><CheckCircle size={12} /> Finalizado{editPrazo.aprovadoEm ? ` em ${new Date(editPrazo.aprovadoEm).toLocaleDateString('pt-BR')}` : ''}</span>
+                : editPrazo.cumpridoDeclaradoEm
+                  ? <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded px-2 py-1"><Clock size={12} /> Cumprido — aguardando seu OK</span>
+                  : editPrazo.status === 'cancelado'
+                    ? <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 border rounded px-2 py-1">Cancelado</span>
+                    : <span className="inline-flex items-center gap-1 bg-gray-50 text-gray-500 border rounded px-2 py-1">Ainda não finalizado</span>}
+            </div>
+          )}
           <PrazoForm
             initial={editPrazo ? { processoId: editPrazo.processoId, tipo: editPrazo.tipo, descricao: editPrazo.descricao, dataHora: editPrazo.dataHora, diasUteis: editPrazo.diasUteis, responsavel: editPrazo.responsavel, status: editPrazo.status, urgente: editPrazo.urgente || false, alertaDias: editPrazo.alertaDias, agendadoPor: editPrazo.agendadoPor || '' } : emptyPrazo()}
             onSave={handleSave}

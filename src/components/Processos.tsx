@@ -1191,6 +1191,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
   };
 
   const iniciarEditPrazo = (pr: Prazo) => {
+    // Abrir = ciência: se quem abre é o responsável e ainda não visualizou, registra.
+    if (pr.responsavel === usuario.nome && !pr.vistoEm && pr.status === 'pendente') {
+      dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, vistoEm: new Date().toISOString(), vistoPor: usuario.nome } });
+    }
     setNovoPrazoTab(false);
     setEditPrazoId(pr.id);
     setEditPrazoForm({ descricao: pr.descricao, dataHora: pr.dataHora, tipo: pr.tipo, responsavel: pr.responsavel || '' });

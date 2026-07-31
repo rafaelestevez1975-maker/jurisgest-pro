@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { CopiarNumero } from './CopiarNumero';
 import {
   Bot, Play, Loader2, CheckCircle2, AlertTriangle, Clock, Search, Key,
   Eye, EyeOff, Scale, Globe, Info, Gavel, Users as UsersIcon, Plus, Trash2, RefreshCw,
@@ -60,6 +61,24 @@ export default function Monitoramento() {
   const [tokenLocal, setTokenLocal] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [salvandoToken, setSalvandoToken] = useState(false);
+  // pesquisa rápida de demandas (só-consulta, não cadastra)
+  const [pesqNome, setPesqNome] = useState('');
+  const [pesqCpf, setPesqCpf] = useState('');
+  const [pesqBuscando, setPesqBuscando] = useState(false);
+  const [pesqResult, setPesqResult] = useState<null | { nome: string; cpf: string; total: number; trabalhistas: number; escav_usado: boolean; djen_erro: string | null; escav_erro: string | null; processos: { numero: string; tribunal: string; trabalhista: boolean; classe: string; partes: string[]; fonte: string; ultimaData: string }[] }>(null);
+  const pesquisarDemandas = async () => {
+    if (pesqNome.trim().length < 3 && !pesqCpf.trim()) { toast.error('Informe um nome (mín. 3 letras) e/ou CPF.'); return; }
+    setPesqBuscando(true); setPesqResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('pesquisa-demandas', { body: { nome: pesqNome.trim(), cpf: pesqCpf.trim() } });
+      if (error) throw error;
+      if (data?.erro) { toast.error(data.mensagem || 'Não foi possível pesquisar.'); }
+      else setPesqResult(data);
+    } catch (e) {
+      toast.error('Falha na pesquisa: ' + ((e as Error)?.message || e));
+    }
+    setPesqBuscando(false);
+  };
   // formulários de cadastro
   const [procNome, setProcNome] = useState('');
   const [procOab, setProcOab] = useState('');
@@ -219,6 +238,67 @@ export default function Monitoramento() {
         <h1 className="text-2xl font-bold text-[#1e3a5f]">Monitoramento &amp; Robôs</h1>
         <p className="text-sm text-gray-500">Captura automática de andamentos e busca de processos por nome</p>
       </div>
+
+      {/* ─── Pesquisa rápida de demandas (triagem — não cadastra) ────────── */}
+      <Card className="border-[#1e3a5f]/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base text-[#1e3a5f] flex items-center gap-2">
+            <Gavel size={18} className="text-[#1e3a5f]" /> Pesquisa rápida de demandas
+          </CardTitle>
+          <p className="text-xs text-gray-500 mt-1">Verifique se alguém <b>já moveu ações</b> (em especial <b>trabalhistas</b>) — útil para triagem de candidatos, fornecedores e parceiros. É só consulta: <b>não cadastra</b> nada.</p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid sm:grid-cols-[1fr_200px_auto] gap-2 items-end">
+            <div>
+              <Label className="text-xs">Nome da pessoa</Label>
+              <Input className="mt-1 h-9 text-sm" placeholder="Nome completo" value={pesqNome} onChange={e => setPesqNome(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') pesquisarDemandas(); }} />
+            </div>
+            <div>
+              <Label className="text-xs">CPF <span className="text-gray-400">(opcional)</span></Label>
+              <Input className="mt-1 h-9 text-sm" placeholder="000.000.000-00" value={pesqCpf} onChange={e => setPesqCpf(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') pesquisarDemandas(); }} />
+            </div>
+            <Button size="sm" className="h-9 bg-[#1e3a5f] hover:bg-[#2563eb]" onClick={pesquisarDemandas} disabled={pesqBuscando}>
+              {pesqBuscando ? <Loader2 size={14} className="animate-spin mr-1" /> : <Search size={14} className="mr-1" />} Pesquisar
+            </Button>
+          </div>
+          <p className="text-[11px] text-gray-400">
+            Fonte gratuita: <b>DJEN/CNJ</b> (por nome, últimos ~12 meses, todos os tribunais). Para <b>histórico completo</b> e busca por <b>CPF</b>, configure o token do Escavador abaixo.
+            {!pesqResult?.escav_usado && ' (Sem token, o CPF não é usado e casos antigos/inativos podem não aparecer.)'}
+          </p>
+
+          {pesqResult && (
+            <div className="border rounded-md">
+              <div className={`px-3 py-2 rounded-t-md flex items-center gap-2 text-sm ${pesqResult.total > 0 ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
+                {pesqResult.total > 0 ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+                <span>
+                  <b>{pesqResult.total}</b> ação(ões) encontrada(s){pesqResult.total > 0 && <> — <b>{pesqResult.trabalhistas}</b> trabalhista(s)</>}
+                  {pesqResult.nome && <span className="text-gray-500"> para “{pesqResult.nome}”{pesqResult.cpf ? ` / ${pesqResult.cpf}` : ''}</span>}
+                </span>
+              </div>
+              {pesqResult.total === 0 && <p className="text-xs text-gray-500 px-3 py-3">Nenhuma ação localizada nas fontes consultadas. Isso não garante inexistência (casos antigos/sigilosos podem não aparecer sem o provedor pago).</p>}
+              {pesqResult.processos.length > 0 && (
+                <div className="divide-y max-h-80 overflow-y-auto">
+                  {pesqResult.processos.map(p => (
+                    <div key={p.numero} className="px-3 py-2 text-xs flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {p.trabalhista && <Badge className="bg-orange-100 text-orange-700 text-[10px] px-1.5"><Scale size={9} className="mr-0.5" />Trabalhista</Badge>}
+                          <Badge variant="outline" className="text-[10px] px-1.5">{p.tribunal || '—'}</Badge>
+                          <span className="font-mono text-[#1e3a5f]">{p.numero}</span>
+                          <CopiarNumero numero={p.numero} size={11} />
+                        </div>
+                        <p className="text-gray-500 mt-0.5 truncate">{p.classe || 'Classe não informada'}{p.partes?.length ? ` · ${p.partes.slice(0, 3).join(' × ')}` : ''}</p>
+                      </div>
+                      <span className="text-[10px] text-gray-400 flex-shrink-0 mt-0.5">{p.fonte}{p.ultimaData ? ` · ${p.ultimaData.split('-').reverse().join('/')}` : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[10px] text-gray-400 px-3 py-2 border-t bg-gray-50 rounded-b-md">⚠️ Homônimos: sem CPF, podem aparecer processos de <b>outras pessoas com o mesmo nome</b>. Confira a identidade antes de concluir.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ─── Robô de Andamentos (DataJud) ─────────────────────────────── */}
       <Card>
