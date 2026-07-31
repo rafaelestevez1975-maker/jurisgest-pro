@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
-import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus, Bot, Link2, GitMerge, Download, Check, ChevronsUpDown, Sparkles, CheckCheck } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus, Bot, Link2, GitMerge, Download, Check, ChevronsUpDown, Sparkles, CheckCheck, Phone, Mail, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { CopiarNumero } from './CopiarNumero';
 
@@ -929,6 +929,7 @@ const statusColor: Record<StatusProcesso, string> = {
 const emptyProcesso = (): Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'> => ({
   numero: '', clienteId: '', vara: '', tribunal: '', comarca: '', uf: '', area: 'cível',
   fase: 'conhecimento', parteContraria: '', advogadoResponsavel: '', valorCausa: undefined,
+  advogadoAdverso: '', advogadoAdversoTelefone: '', advogadoAdversoEmail: '',
   dataDistribuicao: '', status: 'ativo', polo: 'autor', objeto: '', observacoes: '',
 });
 
@@ -1050,6 +1051,23 @@ function ProcessoForm({ initial, onSave, onCancel }: {
         <div>
           <Label className="text-xs">Parte Contrária</Label>
           <Input className="mt-1 h-8 text-sm" value={form.parteContraria} onChange={e => set('parteContraria', e.target.value)} />
+        </div>
+        <div className="col-span-2 border rounded-md p-2.5 bg-slate-50/60">
+          <p className="text-[11px] font-semibold text-[#1e3a5f] mb-1.5">Advogado da parte adversa <span className="font-normal text-gray-400">(facilita acordos e negociações)</span></p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2 sm:col-span-1">
+              <Label className="text-xs">Nome do advogado adverso</Label>
+              <Input className="mt-1 h-8 text-sm" value={form.advogadoAdverso || ''} onChange={e => set('advogadoAdverso', e.target.value)} placeholder="Ex: Dr. Fulano — OAB 00000/UF" />
+            </div>
+            <div>
+              <Label className="text-xs">Telefone</Label>
+              <Input className="mt-1 h-8 text-sm" value={form.advogadoAdversoTelefone || ''} onChange={e => set('advogadoAdversoTelefone', e.target.value)} placeholder="(00) 00000-0000" />
+            </div>
+            <div>
+              <Label className="text-xs">E-mail</Label>
+              <Input type="email" className="mt-1 h-8 text-sm" value={form.advogadoAdversoEmail || ''} onChange={e => set('advogadoAdversoEmail', e.target.value)} placeholder="advogado@email.com" />
+            </div>
+          </div>
         </div>
         <div className="col-span-2">
           <Label className="text-xs">Objeto / Assunto da Ação</Label>
@@ -1312,6 +1330,21 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
             <p className="text-gray-400 text-[10px] uppercase">Objeto — o que é a ação</p>
             <p className="font-medium mt-0.5 break-words">{processo.objeto || '—'}</p>
           </div>
+          {(processo.advogadoAdverso || processo.advogadoAdversoTelefone || processo.advogadoAdversoEmail) && (
+            <div className="mt-2 bg-slate-50 border border-slate-200 rounded p-2.5 text-xs">
+              <p className="text-gray-400 text-[10px] uppercase mb-1">Advogado da parte adversa <span className="text-gray-300 normal-case">(contato p/ acordos)</span></p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                {processo.advogadoAdverso && <span className="font-medium text-gray-800 inline-flex items-center gap-1"><Scale size={11} className="text-gray-400" />{processo.advogadoAdverso}</span>}
+                {processo.advogadoAdversoTelefone && (
+                  <span className="inline-flex items-center gap-2">
+                    <a href={`tel:${processo.advogadoAdversoTelefone.replace(/[^\d+]/g, '')}`} className="text-[#2563eb] hover:underline inline-flex items-center gap-1"><Phone size={11} />{processo.advogadoAdversoTelefone}</a>
+                    <a href={`https://wa.me/55${processo.advogadoAdversoTelefone.replace(/\D/g, '').replace(/^55/, '')}`} target="_blank" rel="noreferrer" className="text-green-600 hover:underline inline-flex items-center gap-1" title="Abrir no WhatsApp"><MessageCircle size={11} />WhatsApp</a>
+                  </span>
+                )}
+                {processo.advogadoAdversoEmail && <a href={`mailto:${processo.advogadoAdversoEmail}`} className="text-[#2563eb] hover:underline inline-flex items-center gap-1"><Mail size={11} />{processo.advogadoAdversoEmail}</a>}
+              </div>
+            </div>
+          )}
           {processo.observacoes && <div className="mt-2 bg-yellow-50 border border-yellow-100 rounded p-2 text-xs text-gray-600 whitespace-pre-wrap">{processo.observacoes}</div>}
           {processo.imagemPath && (
             <div className="mt-3">
@@ -1536,7 +1569,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
           <DialogHeader><DialogTitle className="text-[#1e3a5f]">Editar Processo</DialogTitle></DialogHeader>
           {editando && (
             <ProcessoForm
-              initial={{ numero: processo.numero, clienteId: processo.clienteId, vara: processo.vara, tribunal: processo.tribunal, comarca: processo.comarca, area: processo.area, fase: processo.fase, parteContraria: processo.parteContraria, advogadoResponsavel: processo.advogadoResponsavel, valorCausa: processo.valorCausa, dataDistribuicao: processo.dataDistribuicao, status: processo.status, polo: processo.polo, objeto: processo.objeto, observacoes: processo.observacoes }}
+              initial={{ numero: processo.numero, clienteId: processo.clienteId, vara: processo.vara, tribunal: processo.tribunal, comarca: processo.comarca, area: processo.area, fase: processo.fase, parteContraria: processo.parteContraria, advogadoResponsavel: processo.advogadoResponsavel, advogadoAdverso: processo.advogadoAdverso, advogadoAdversoTelefone: processo.advogadoAdversoTelefone, advogadoAdversoEmail: processo.advogadoAdversoEmail, valorCausa: processo.valorCausa, dataDistribuicao: processo.dataDistribuicao, status: processo.status, polo: processo.polo, objeto: processo.objeto, observacoes: processo.observacoes }}
               onSave={salvarEdicao}
               onCancel={() => setEditando(false)}
             />
@@ -2082,9 +2115,9 @@ export default function Processos() {
   const tribunaisUnicos = [...new Set(state.processos.map(p => p.tribunal).filter(Boolean))];
 
   const initialForm = editProcesso
-    ? { numero: editProcesso.numero, clienteId: editProcesso.clienteId, vara: editProcesso.vara, tribunal: editProcesso.tribunal, comarca: editProcesso.comarca, area: editProcesso.area, fase: editProcesso.fase, parteContraria: editProcesso.parteContraria, advogadoResponsavel: editProcesso.advogadoResponsavel, valorCausa: editProcesso.valorCausa, dataDistribuicao: editProcesso.dataDistribuicao, status: editProcesso.status, polo: editProcesso.polo, objeto: editProcesso.objeto, observacoes: editProcesso.observacoes }
+    ? { numero: editProcesso.numero, clienteId: editProcesso.clienteId, vara: editProcesso.vara, tribunal: editProcesso.tribunal, comarca: editProcesso.comarca, area: editProcesso.area, fase: editProcesso.fase, parteContraria: editProcesso.parteContraria, advogadoResponsavel: editProcesso.advogadoResponsavel, advogadoAdverso: editProcesso.advogadoAdverso, advogadoAdversoTelefone: editProcesso.advogadoAdversoTelefone, advogadoAdversoEmail: editProcesso.advogadoAdversoEmail, valorCausa: editProcesso.valorCausa, dataDistribuicao: editProcesso.dataDistribuicao, status: editProcesso.status, polo: editProcesso.polo, objeto: editProcesso.objeto, observacoes: editProcesso.observacoes }
     : prefill
-      ? { numero: prefill.numero, clienteId: prefill.clienteId, vara: prefill.vara, tribunal: prefill.tribunal, comarca: prefill.comarca, area: prefill.area, fase: prefill.fase, parteContraria: prefill.parteContraria, advogadoResponsavel: prefill.advogadoResponsavel || '', valorCausa: prefill.valorCausa, dataDistribuicao: prefill.dataDistribuicao, status: prefill.status, polo: prefill.polo ?? 'autor', objeto: prefill.objeto ?? '', observacoes: prefill.observacoes }
+      ? { numero: prefill.numero, clienteId: prefill.clienteId, vara: prefill.vara, tribunal: prefill.tribunal, comarca: prefill.comarca, area: prefill.area, fase: prefill.fase, parteContraria: prefill.parteContraria, advogadoResponsavel: prefill.advogadoResponsavel || '', advogadoAdverso: prefill.advogadoAdverso, advogadoAdversoTelefone: prefill.advogadoAdversoTelefone, advogadoAdversoEmail: prefill.advogadoAdversoEmail, valorCausa: prefill.valorCausa, dataDistribuicao: prefill.dataDistribuicao, status: prefill.status, polo: prefill.polo ?? 'autor', objeto: prefill.objeto ?? '', observacoes: prefill.observacoes }
       : emptyProcesso();
 
   return (

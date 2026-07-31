@@ -84,6 +84,9 @@ export interface Processo {
   fase: FaseProcessual;
   parteContraria: string;
   advogadoResponsavel: string;
+  advogadoAdverso?: string;           // advogado da parte adversa (facilita acordos)
+  advogadoAdversoTelefone?: string;   // telefone de contato do advogado adverso
+  advogadoAdversoEmail?: string;      // e-mail de contato do advogado adverso
   valorCausa?: number;
   dataDistribuicao: string;
   status: StatusProcesso;
