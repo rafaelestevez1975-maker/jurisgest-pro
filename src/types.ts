@@ -102,6 +102,7 @@ export interface Processo {
   imagemNome?: string;
   alertaArquivamento?: AlertaArquivamento;  // alerta de baixa/arquivamento pendente de decisão
   alertaNovo?: boolean;  // processo recém-capturado automaticamente, aguardando revisão do usuário
+  alertaBloqueio?: boolean;  // há ordem/efetivação de bloqueio ou penhora online (SISBAJUD/BacenJud)
   criadoEm: string;
 }
 

@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
-import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus, Bot, Link2, GitMerge, Download, Check, ChevronsUpDown, Sparkles, CheckCheck, Phone, Mail, MessageCircle } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, ChevronRight, Clock, Scale, Wifi, Loader2, CheckCircle2, AlertCircle, ImageIcon, FileText, Brain, Upload, Users, X, ListPlus, Bot, Link2, GitMerge, Download, Check, ChevronsUpDown, Sparkles, CheckCheck, Phone, Mail, MessageCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { CopiarNumero } from './CopiarNumero';
 
@@ -1284,6 +1284,11 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
             <span className="font-medium">{processo.parteContraria || 'parte adversa não informada'}</span>
             {processo.polo ? <span className="text-[11px] text-gray-400"> · nosso cliente no polo {processo.polo}</span> : null}
           </p>
+          {processo.alertaBloqueio && (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 rounded px-2 py-1 text-[11px] font-medium">
+              <AlertTriangle size={12} /> Alerta: há ordem/efetivação de <b>bloqueio ou penhora online</b> (SISBAJUD/BacenJud) neste processo — confira os andamentos.
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {processo.arquivado && <Badge className="bg-slate-200 text-slate-600 text-[10px]">Arquivado</Badge>}
@@ -1948,6 +1953,7 @@ export default function Processos() {
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [soAlerta, setSoAlerta] = useState(false);
   const [soNovos, setSoNovos] = useState(false);
+  const [soBloqueio, setSoBloqueio] = useState(false);
   const [alertaConcordar, setAlertaConcordar] = useState<Processo | null>(null);
   // prefill from DataJud — stored here, passed to form via key remount
   const [prefill, setPrefill] = useState<(Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'> & { movimentacoes?: Movimentacao[] }) | null>(null);
@@ -1971,6 +1977,7 @@ export default function Processos() {
 
   const alertaCount = state.processos.filter(p => p.alertaArquivamento?.ativo && !p.arquivado && usuario.emArea(p.area)).length;
   const novosCount = state.processos.filter(p => p.alertaNovo && !p.arquivado && usuario.emArea(p.area)).length;
+  const bloqueioCount = state.processos.filter(p => p.alertaBloqueio && !p.arquivado && usuario.emArea(p.area)).length;
 
   const marcarRevisado = (proc: Processo) => {
     dispatch({ type: 'UPDATE_PROCESSO', payload: { ...proc, alertaNovo: false } });
@@ -2035,6 +2042,7 @@ export default function Processos() {
     if (!usuario.podeVerProcesso(p)) return false;
     if (soAlerta && !p.alertaArquivamento?.ativo) return false;
     if (soNovos && !p.alertaNovo) return false;
+    if (soBloqueio && !p.alertaBloqueio) return false;
     const cliente = state.clientes.find(c => c.id === p.clienteId);
     const s = search.toLowerCase();
     const matchSearch = (p.numero || '').toLowerCase().includes(s) ||
@@ -2196,6 +2204,13 @@ export default function Processos() {
             <CheckCheck size={14} className="mr-1" /> Marcar todos como revisados
           </Button>
         )}
+        {bloqueioCount > 0 && (
+          <Button variant={soBloqueio ? 'default' : 'outline'} size="sm"
+            className={`h-9 text-xs ${soBloqueio ? 'bg-red-600 hover:bg-red-700 text-white' : 'border-red-300 text-red-700 hover:bg-red-50'}`}
+            onClick={() => { setSoBloqueio(v => !v); setSoAlerta(false); setSoNovos(false); }}>
+            <AlertTriangle size={14} className="mr-1" /> {soBloqueio ? 'Ver todos' : `Bloqueio/Penhora (${bloqueioCount})`}
+          </Button>
+        )}
         {soAlerta && alertaCount > 0 && usuario.podeEditar && (
           <Button size="sm" variant="outline" className="h-9 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" onClick={fecharTodosAlertas}>
             <X size={14} className="mr-1" /> Fechar todos (sem arquivar)
@@ -2230,6 +2245,7 @@ export default function Processos() {
                         <Badge variant="outline" className="text-[10px] px-1.5 capitalize">{proc.area}</Badge>
                         <Badge variant="outline" className="text-[10px] px-1.5 capitalize">{proc.fase}</Badge>
                         {proc.alertaNovo && <Badge className="bg-blue-600 text-white text-[10px] px-1.5"><Sparkles size={9} className="mr-0.5" />Novo</Badge>}
+                        {proc.alertaBloqueio && <Badge className="bg-red-600 text-white text-[10px] px-1.5" title="Há ordem ou efetivação de bloqueio/penhora online (SISBAJUD/BacenJud)"><AlertTriangle size={9} className="mr-0.5" />Bloqueio/Penhora</Badge>}
                         {proc.origem === 'auto_intimacao' && <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5"><Bot size={9} className="mr-0.5" />Auto (intimação)</Badge>}
                         {proc.origem === 'imagem' && <Badge className="bg-teal-100 text-teal-700 text-[10px] px-1.5"><ImageIcon size={9} className="mr-0.5" />Print</Badge>}
                         {proc.processoOrigemId && procById.get(proc.processoOrigemId) && <Badge variant="outline" className="text-[10px] px-1.5 text-purple-700 border-purple-300"><Link2 size={9} className="mr-0.5" />origem: {procById.get(proc.processoOrigemId)!.numero}</Badge>}

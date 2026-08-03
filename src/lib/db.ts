@@ -102,6 +102,7 @@ function toProcesso(r: Record<string, unknown>, movs: Movimentacao[] = []): Proc
     imagemNome: (r.imagem_nome as string) ?? undefined,
     alertaArquivamento: (r.alerta_arquivamento as AlertaArquivamento) ?? undefined,
     alertaNovo: (r.alerta_novo as boolean) ?? false,
+    alertaBloqueio: (r.alerta_bloqueio as boolean) ?? false,
     criadoEm: r.criado_em as string,
   };
 }
