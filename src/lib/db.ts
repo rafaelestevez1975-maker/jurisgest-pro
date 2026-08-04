@@ -402,6 +402,8 @@ export const db = {
   // Coluna própria do servidor (setada pela captura); fica fora do upsert, como o alerta de arquivamento.
   marcarProcessoRevisado: (processoId: string) =>
     supabase.from('processos').update({ alerta_novo: false }).eq('id', processoId),
+  ignorarAlertaBloqueio: (processoId: string) =>
+    supabase.from('processos').update({ alerta_bloqueio: false }).eq('id', processoId),
 
   // Sincroniza os andamentos de UM processo via DataJud — no SERVIDOR (o DataJud não tem
   // CORS, então o navegador não pode chamá-lo direto; a edge function faz a ponte).

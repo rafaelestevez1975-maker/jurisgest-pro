@@ -1293,8 +1293,17 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
             {processo.polo ? <span className="text-[11px] text-gray-400"> · nosso cliente no polo {processo.polo}</span> : null}
           </p>
           {processo.alertaBloqueio && (
-            <div className="mt-1.5 inline-flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 rounded px-2 py-1 text-[11px] font-medium">
-              <AlertTriangle size={12} /> Alerta: há ordem/efetivação de <b>bloqueio ou penhora online</b> (SISBAJUD/BacenJud) neste processo — confira os andamentos.
+            <div className="mt-1.5 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded px-2 py-1.5 text-[11px] font-medium">
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <span className="flex-1">Alerta: há ordem/efetivação de <b>bloqueio ou penhora online</b> (SISBAJUD/BacenJud) neste processo — confira os andamentos.</span>
+              {usuario.podeContribuir && (
+                <button
+                  className="flex-shrink-0 text-red-600 hover:text-red-800 underline font-normal"
+                  title="Remover este alerta (ex.: falso positivo, não nos interessa, ou risco afastado por acordo)"
+                  onClick={() => { db.ignorarAlertaBloqueio(processo.id); dispatch({ type: 'UPDATE_PROCESSO', payload: { ...processo, alertaBloqueio: false } }); toast.success('Alerta de bloqueio/penhora ignorado.'); logAcao('editar', 'processo', `Ignorou o alerta de bloqueio/penhora do processo ${processo.numero}`, processo.id); }}>
+                  Ignorar
+                </button>
+              )}
             </div>
           )}
         </div>
