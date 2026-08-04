@@ -1222,17 +1222,20 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
   const enviarDocs = async (files: FileList | File[] | null, tipo: string) => {
     const lista = files ? Array.from(files) : [];
     if (!lista.length) return;
+    const LIMITE = 100 * 1024 * 1024; // 100 MB (limite do Storage)
+    const grande = lista.find(f => f.size > LIMITE);
+    if (grande) { toast.error(`"${grande.name}" tem ${(grande.size / 1048576).toFixed(0)} MB — acima do limite de 100 MB. Comprima o PDF e tente novamente.`); return; }
     setSubindoDoc(true);
-    let ok = 0; const falhas: string[] = [];
+    let ok = 0; const falhas: string[] = []; let ultimoErro = '';
     for (const file of lista) {
       const { error } = await db.uploadDocumento(processo.id, file, tipo);
-      if (error) falhas.push(file.name);
+      if (error) { falhas.push(file.name); ultimoErro = (error as { message?: string })?.message || ultimoErro; }
       else { ok++; logAcao('criar', 'documento', `Anexou documento "${file.name}" ao processo ${processo.numero}`, processo.id); }
     }
     carregarDocs();
     setSubindoDoc(false);
     if (ok) toast.success(`${ok} documento(s) anexado(s).`);
-    if (falhas.length) toast.error(`Falha ao anexar ${falhas.length}: ${falhas.slice(0, 3).join(', ')}${falhas.length > 3 ? '…' : ''}`);
+    if (falhas.length) toast.error(`Falha ao anexar ${falhas.length} (${falhas.slice(0, 2).join(', ')}${falhas.length > 2 ? '…' : ''})${ultimoErro ? ` — ${ultimoErro}` : ''}`);
   };
   const baixarDoc = async (d: Documento) => {
     const url = await db.signedUrlDocumento(d.arquivoPath);
