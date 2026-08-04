@@ -229,15 +229,17 @@ export default function Publicacoes() {
         const caps = (data || []).filter((s: { detalhes?: { origem?: string } }) => String(s.detalhes?.origem || '').startsWith('DJEN'));
         if (caps.length === 0) return;
         const ultima = caps[0] as { status?: string; executado_em: string; detalhes?: { detalhes?: { erro?: string }[] } };
-        const okRecente = caps.find((s: { status?: string; executado_em: string }) =>
-          s.status === 'sucesso' && (Date.now() - new Date(s.executado_em).getTime()) < 48 * 3600000);
-        if (ultima.status === 'erro') {
+        // Só alarma se NÃO houve captura bem-sucedida recente (falha persistente).
+        // Um 403 transitório do CNJ (recuperado no próximo ciclo) não deve assustar.
+        const ultimoSucesso = caps.find((s: { status?: string; executado_em: string }) => s.status === 'sucesso');
+        const horasDesdeSucesso = ultimoSucesso ? (Date.now() - new Date(ultimoSucesso.executado_em).getTime()) / 3600000 : Infinity;
+        if (horasDesdeSucesso <= 24) {
+          setCapturaAlerta(null); // capturou com sucesso nas últimas 24h — sem alarme
+        } else if (ultima.status === 'erro') {
           const err = (ultima.detalhes?.detalhes || []).find(d => d?.erro)?.erro || 'erro na fonte (CNJ/DJEN)';
-          setCapturaAlerta({ tipo: 'erro', quando: ultima.executado_em, msg: `A última tentativa de captura automática de intimações falhou (${err}).` });
-        } else if (!okRecente) {
-          setCapturaAlerta({ tipo: 'inativa', quando: ultima.executado_em, msg: 'Não há captura de intimações bem-sucedida nas últimas 48 horas.' });
+          setCapturaAlerta({ tipo: 'erro', quando: ultima.executado_em, msg: `A captura automática de intimações está falhando há mais de 24h (${err}).` });
         } else {
-          setCapturaAlerta(null);
+          setCapturaAlerta({ tipo: 'inativa', quando: ultima.executado_em, msg: 'Não há captura de intimações bem-sucedida nas últimas 24 horas.' });
         }
       });
   }, [state.publicacoes.length]);
