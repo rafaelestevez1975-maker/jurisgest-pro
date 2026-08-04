@@ -1219,12 +1219,20 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
   const [subindoDoc, setSubindoDoc] = useState(false);
   const carregarDocs = () => { db.listarDocumentos(processo.id).then(setDocumentos); };
   useEffect(() => { db.listarDocumentos(processo.id).then(setDocumentos); }, [processo.id]);
-  const enviarDoc = async (file: File, tipo: string) => {
+  const enviarDocs = async (files: FileList | File[] | null, tipo: string) => {
+    const lista = files ? Array.from(files) : [];
+    if (!lista.length) return;
     setSubindoDoc(true);
-    const { error } = await db.uploadDocumento(processo.id, file, tipo);
-    if (error) toast.error('Falha ao anexar: ' + (error as { message?: string }).message);
-    else { toast.success('Documento anexado!'); carregarDocs(); logAcao('criar', 'documento', `Anexou documento "${file.name}" ao processo ${processo.numero}`, processo.id); }
+    let ok = 0; const falhas: string[] = [];
+    for (const file of lista) {
+      const { error } = await db.uploadDocumento(processo.id, file, tipo);
+      if (error) falhas.push(file.name);
+      else { ok++; logAcao('criar', 'documento', `Anexou documento "${file.name}" ao processo ${processo.numero}`, processo.id); }
+    }
+    carregarDocs();
     setSubindoDoc(false);
+    if (ok) toast.success(`${ok} documento(s) anexado(s).`);
+    if (falhas.length) toast.error(`Falha ao anexar ${falhas.length}: ${falhas.slice(0, 3).join(', ')}${falhas.length > 3 ? '…' : ''}`);
   };
   const baixarDoc = async (d: Documento) => {
     const url = await db.signedUrlDocumento(d.arquivoPath);
@@ -1542,8 +1550,8 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
             <p className="text-xs text-gray-500">{documentos.filter(d => !d.arquivado).length} documento(s) ativo(s){documentos.some(d => d.arquivado) ? ` · ${documentos.filter(d => d.arquivado).length} inativo(s)` : ''}</p>
             {usuario.podeContribuir && (
               <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
-                {subindoDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar documento
-                <input type="file" className="hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.jpg,.jpeg,.png" disabled={subindoDoc} onChange={e => { const f = e.target.files?.[0]; if (f) enviarDoc(f, 'documento'); e.target.value = ''; }} />
+                {subindoDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar documento(s)
+                <input type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.jpg,.jpeg,.png" disabled={subindoDoc} onChange={e => { enviarDocs(e.target.files, 'documento'); e.target.value = ''; }} />
               </label>
             )}
           </div>
