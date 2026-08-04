@@ -114,7 +114,7 @@ function ClienteCombo({ value, onChange, clientes }: {
   );
 }
 // Tipos de andamento sugeridos (padronizam a categoria; ainda é possível digitar outro)
-export const TIPOS_ANDAMENTO = ['Observação','Acordo','Suspenso','Sentença','Decisão','Despacho','Audiência','Petição','Recurso','Cumprimento de sentença','Baixa','Arquivamento','Distribuição','Outro'];
+export const TIPOS_ANDAMENTO = ['Observação','Acordo','Suspenso','Sentença','Decisão','Despacho','Audiência','Petição','Recurso','Cumprimento de sentença','Parcelamento Judicial','Baixa','Arquivamento','Distribuição','Outro'];
 
 // DataJud API key (public, shared by CNJ for open access)
 const DATAJUD_API_KEY = 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==';

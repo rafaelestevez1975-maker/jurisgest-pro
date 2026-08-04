@@ -109,6 +109,9 @@ export default function Relatorios() {
   const [semAndamentoDias, setSemAndamentoDias] = useState('');
   const [andDe, setAndDe] = useState('');
   const [andAte, setAndAte] = useState('');
+  // Aba: relatório de processos x audiências do mês
+  const [aba, setAba] = useState<'processos' | 'audiencias'>('processos');
+  const [mesAud, setMesAud] = useState<string>(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
 
   const tribunais = [...new Set(processos.map(p => p.tribunal).filter(Boolean))].sort();
   const comarcas = [...new Set(processos.map(p => p.comarca).filter(Boolean))].sort();
@@ -116,6 +119,31 @@ export default function Relatorios() {
   const nomeCliente = (id: string) => clientes.find(c => c.id === id)?.nome || '—';
   const ultimosAndamentos = (p: Processo, n = 3) =>
     [...p.movimentacoes].sort((a, b) => (b.data || '').localeCompare(a.data || '')).slice(0, n);
+
+  // ── Audiências do mês (prazos do tipo "audiência") ───────────────────────
+  const audiencias = useMemo(() => {
+    return prazos
+      .filter(z => z.tipo === 'audiência' && (z.dataHora || '').slice(0, 7) === mesAud)
+      .filter(z => advogadosSel.length === 0 || advogadosSel.includes(z.responsavel))
+      .filter(z => {
+        const proc = processos.find(x => x.id === z.processoId);
+        return usuario.areasVisiveis === null || (proc ? usuario.emArea(proc.area) : true) || z.responsavel === usuario.nome;
+      })
+      .sort((a, b) => (a.dataHora || '').localeCompare(b.dataHora || ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prazos, mesAud, advogadosSel, processos]);
+  const nomeMes = (ym: string) => {
+    const [a, m] = ym.split('-');
+    const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    return `${meses[Number(m) - 1] || m}/${a}`;
+  };
+  const CAB_AUD = ['Data', 'Hora', 'Processo', 'Cliente', 'Parte adversa', 'Responsável', 'Situação', 'O que fazer'];
+  const linhasAud = () => audiencias.map(z => {
+    const proc = processos.find(x => x.id === z.processoId);
+    const [d, h] = (z.dataHora || '').split('T');
+    return [d ? d.split('-').reverse().join('/') : '', (h || '').slice(0, 5), proc?.numero || '', proc ? nomeCliente(proc.clienteId) : '', proc?.parteContraria || '', z.responsavel || '', z.status, z.descricao || ''] as (string | number | null | undefined)[];
+  });
+  const exportarAudienciasXls = () => exportarExcel(`audiencias_${mesAud}`, CAB_AUD, linhasAud(), 'Audiências');
 
   // Andamentos que casam com o filtro de tipo (Andamento) e/ou período (andDe/andAte).
   // Usado tanto para filtrar processos quanto para somar valores (ex.: cumprimento de sentença).
@@ -239,19 +267,30 @@ export default function Relatorios() {
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3 no-print">
         <div>
-          <h1 className="text-2xl font-bold text-[#1e3a5f] flex items-center gap-2"><BarChart2 size={22} /> Relatórios de Processos</h1>
-          <p className="text-sm text-gray-500">Filtre e gere relatórios detalhados da carteira de processos</p>
+          <h1 className="text-2xl font-bold text-[#1e3a5f] flex items-center gap-2"><BarChart2 size={22} /> Relatórios</h1>
+          <p className="text-sm text-gray-500">{aba === 'processos' ? 'Filtre e gere relatórios da carteira de processos' : 'Audiências do mês — com dia, hora e responsável'}</p>
+          <div className="flex gap-1 mt-2 no-print">
+            <Button size="sm" variant={aba === 'processos' ? 'default' : 'outline'} className={`h-7 text-xs ${aba === 'processos' ? 'bg-[#1e3a5f] hover:bg-[#2563eb]' : ''}`} onClick={() => setAba('processos')}>Processos</Button>
+            <Button size="sm" variant={aba === 'audiencias' ? 'default' : 'outline'} className={`h-7 text-xs ${aba === 'audiencias' ? 'bg-[#1e3a5f] hover:bg-[#2563eb]' : ''}`} onClick={() => setAba('audiencias')}><Clock size={13} className="mr-1" />Audiências</Button>
+          </div>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" className="text-xs" onClick={exportarXls} disabled={!resultado.length}>
-            <Download size={14} className="mr-1" /> Exportar Excel
-          </Button>
-          <Button size="sm" variant="outline" className="text-xs" onClick={() => window.print()} disabled={!resultado.length}>
+          {aba === 'processos' ? (
+            <Button size="sm" variant="outline" className="text-xs" onClick={exportarXls} disabled={!resultado.length}>
+              <Download size={14} className="mr-1" /> Exportar Excel
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" className="text-xs" onClick={exportarAudienciasXls} disabled={!audiencias.length}>
+              <Download size={14} className="mr-1" /> Exportar Excel
+            </Button>
+          )}
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => window.print()} disabled={aba === 'processos' ? !resultado.length : !audiencias.length}>
             <Printer size={14} className="mr-1" /> Imprimir / PDF
           </Button>
         </div>
       </div>
 
+      {aba === 'processos' && (<>
       {/* ── Filtros ── */}
       <Card className="no-print">
         <CardContent className="p-4 space-y-3">
@@ -506,6 +545,63 @@ export default function Relatorios() {
           );
         })}
       </div>
+      </>)}
+
+      {aba === 'audiencias' && (
+        <div className="space-y-3 print-area">
+          <div className="flex items-end gap-3 flex-wrap no-print">
+            <div>
+              <Label className="text-[10px] text-gray-400 uppercase">Mês</Label>
+              <Input type="month" className="h-8 text-xs mt-1 w-40" value={mesAud} onChange={e => setMesAud(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-[10px] text-gray-400 uppercase">Responsável</Label>
+              <MultiSelect label="Responsável" options={advogados.map(a => ({ value: a.nome, label: a.nome }))} selected={advogadosSel} onChange={setAdvogadosSel} width="w-52" emptyLabel="Todos" />
+            </div>
+          </div>
+          <p className="text-sm text-gray-600"><b className="text-[#1e3a5f]">{audiencias.length}</b> audiência(s) em {nomeMes(mesAud)}</p>
+          {audiencias.length === 0 ? (
+            <p className="text-sm text-gray-500 py-8 text-center">Nenhuma audiência agendada neste mês{advogadosSel.length ? ' para o(s) responsável(is) selecionado(s)' : ''}.</p>
+          ) : (
+            <div className="border rounded-md overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-[#1e3a5f] text-white">
+                  <tr>
+                    <th className="text-left px-2 py-2 whitespace-nowrap">Dia</th>
+                    <th className="text-left px-2 py-2 whitespace-nowrap">Hora</th>
+                    <th className="text-left px-2 py-2">Processo</th>
+                    <th className="text-left px-2 py-2">Cliente × Adverso</th>
+                    <th className="text-left px-2 py-2">Responsável</th>
+                    <th className="text-left px-2 py-2">Situação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {audiencias.map(z => {
+                    const proc = processos.find(x => x.id === z.processoId);
+                    const [d, h] = (z.dataHora || '').split('T');
+                    const concl = z.status === 'cumprido' || z.status === 'cancelado';
+                    return (
+                      <tr key={z.id} className={concl ? 'opacity-60' : ''}>
+                        <td className="px-2 py-1.5 font-medium whitespace-nowrap">{d ? d.split('-').reverse().join('/') : '—'}</td>
+                        <td className="px-2 py-1.5 font-bold text-[#1e3a5f] whitespace-nowrap">{(h || '').slice(0, 5) || '—'}</td>
+                        <td className="px-2 py-1.5">
+                          {proc
+                            ? <button onClick={() => setVerProc(proc)} className="font-mono text-blue-600 hover:underline">{proc.numero}</button>
+                            : <span className="text-gray-500">{z.descricao || '—'}</span>}
+                        </td>
+                        <td className="px-2 py-1.5">{proc ? `${nomeCliente(proc.clienteId)} × ${proc.parteContraria || '—'}` : (z.descricao || '—')}</td>
+                        <td className="px-2 py-1.5 font-medium whitespace-nowrap">{z.responsavel || '—'}</td>
+                        <td className="px-2 py-1.5"><Badge className={`text-[10px] capitalize ${z.status === 'pendente' ? 'bg-amber-100 text-amber-700' : z.status === 'cumprido' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{z.status}</Badge></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       <ProcessoDetalheDialog processo={verProc} onClose={() => setVerProc(null)} />
     </div>
   );
