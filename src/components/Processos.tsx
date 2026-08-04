@@ -1158,10 +1158,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
   };
   const [editando, setEditando] = useState(false);
   const [novoPrazoTab, setNovoPrazoTab] = useState(false);
-  const [novoPrazo, setNovoPrazo] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
+  const [novoPrazo, setNovoPrazo] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string; urgente: boolean }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '', urgente: false });
   // edição inline de um prazo já agendado (a partir da aba do processo)
   const [editPrazoId, setEditPrazoId] = useState<string | null>(null);
-  const [editPrazo, setEditPrazoForm] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
+  const [editPrazo, setEditPrazoForm] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string; urgente: boolean }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '', urgente: false });
   const cliente = state.clientes.find(c => c.id === processo.clienteId);
   const prazosProc = state.prazos.filter(p => p.processoId === processo.id);
   const peticoesProc = state.peticoes.filter(p => p.processoId === processo.id);
@@ -1182,10 +1182,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
       payload: {
         id: genId(), processoId: processo.id, tipo: novoPrazo.tipo, descricao: novoPrazo.descricao.trim(),
         dataHora: novoPrazo.dataHora, diasUteis: true, responsavel: novoPrazo.responsavel,
-        status: 'pendente', alertaDias: 3, agendadoPor: '', criadoEm: new Date().toISOString(),
+        status: 'pendente', urgente: novoPrazo.urgente, alertaDias: 3, agendadoPor: '', criadoEm: new Date().toISOString(),
       } as Prazo,
     });
-    setNovoPrazo({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '' });
+    setNovoPrazo({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '', urgente: false });
     setNovoPrazoTab(false);
     toast.success('Prazo agendado!');
   };
@@ -1197,13 +1197,13 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
     }
     setNovoPrazoTab(false);
     setEditPrazoId(pr.id);
-    setEditPrazoForm({ descricao: pr.descricao, dataHora: pr.dataHora, tipo: pr.tipo, responsavel: pr.responsavel || '' });
+    setEditPrazoForm({ descricao: pr.descricao, dataHora: pr.dataHora, tipo: pr.tipo, responsavel: pr.responsavel || '', urgente: !!pr.urgente });
   };
   const salvarEditPrazo = () => {
     const pr = prazosProc.find(p => p.id === editPrazoId);
     if (!pr) { setEditPrazoId(null); return; }
     if (!editPrazo.descricao.trim() || !editPrazo.dataHora) { toast.error('Preencha a tarefa e a data/hora.'); return; }
-    dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, descricao: editPrazo.descricao.trim(), dataHora: editPrazo.dataHora, tipo: editPrazo.tipo, responsavel: editPrazo.responsavel } });
+    dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, descricao: editPrazo.descricao.trim(), dataHora: editPrazo.dataHora, tipo: editPrazo.tipo, responsavel: editPrazo.responsavel, urgente: editPrazo.urgente } });
     setEditPrazoId(null);
     toast.success('Prazo atualizado!');
   };
@@ -1493,6 +1493,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                     <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
+                <label className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 cursor-pointer text-xs w-fit ${editPrazo.urgente ? 'bg-red-50 border-red-300 text-red-700 font-semibold' : 'bg-white border-gray-200 text-gray-600'}`}>
+                  <input type="checkbox" className="accent-red-600" checked={editPrazo.urgente} onChange={e => setEditPrazoForm(p => ({ ...p, urgente: e.target.checked }))} />
+                  <AlertTriangle size={13} className={editPrazo.urgente ? 'text-red-600' : 'text-gray-400'} /> Marcar como URGENTE
+                </label>
                 <div className="flex gap-2"><Button size="sm" variant="success" className="h-7 text-xs" onClick={salvarEditPrazo}>Salvar</Button><Button size="sm" variant="cancel" className="h-7 text-xs" onClick={() => setEditPrazoId(null)}>Cancelar</Button></div>
               </div>
               );
@@ -1540,6 +1544,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                   <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              <label className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 cursor-pointer text-xs w-fit ${novoPrazo.urgente ? 'bg-red-50 border-red-300 text-red-700 font-semibold' : 'bg-white border-gray-200 text-gray-600'}`}>
+                <input type="checkbox" className="accent-red-600" checked={novoPrazo.urgente} onChange={e => setNovoPrazo(p => ({ ...p, urgente: e.target.checked }))} />
+                <AlertTriangle size={13} className={novoPrazo.urgente ? 'text-red-600' : 'text-gray-400'} /> Marcar como URGENTE
+              </label>
               <div className="flex gap-2"><Button size="sm" variant="success" className="h-7 text-xs" onClick={addPrazo}>Agendar</Button><Button size="sm" variant="cancel" className="h-7 text-xs" onClick={() => setNovoPrazoTab(false)}>Cancelar</Button></div>
             </div>
           ) : (
