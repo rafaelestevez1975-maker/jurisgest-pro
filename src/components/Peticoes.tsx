@@ -512,8 +512,8 @@ export default function Peticoes() {
                     {pet.arquivoPath && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700" title="Baixar arquivo" onClick={() => baixarArquivo(pet)}><Download size={13} /></Button>}
                     {usuario.podeEditar && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditPeticao(pet); setDialogOpen(true); }}><Edit size={12} /></Button>}
                     {usuario.podeEditar && (pet.arquivado
-                      ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => restaurarPeticao(pet)}><ArchiveRestore size={13} /></Button>
-                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(pet.id)}><Archive size={13} /></Button>)}
+                      ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar petição" onClick={() => restaurarPeticao(pet)}><ArchiveRestore size={13} /></Button>
+                      : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar petição" onClick={() => setArquivarId(pet.id)}><Archive size={13} /></Button>)}
                   </div>
                 </div>
                 {pet.observacoes && <p className="text-xs text-gray-500 mt-2 bg-gray-50 rounded px-2 py-1">{pet.observacoes}</p>}
@@ -546,7 +546,7 @@ export default function Peticoes() {
       <Dialog open={!!arquivarId} onOpenChange={() => setArquivarId(null)}>
         <DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Arquivar petição</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-600">A petição sai da lista ativa, mas <b>não é excluída</b> — você pode restaurá-la em "Arquivadas".</p>
-          <DialogFooter><Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button><Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarPeticao(arquivarId)}>Arquivar</Button></DialogFooter>
+          <DialogFooter><Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button><Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarPeticao(arquivarId)}>Arquivar petição</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       <ProcessoDetalheDialog processo={verProc} onClose={() => setVerProc(null)} />

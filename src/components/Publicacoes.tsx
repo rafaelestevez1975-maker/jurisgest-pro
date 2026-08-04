@@ -678,8 +678,8 @@ export default function Publicacoes() {
                                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-[#1e3a5f]" title="Gerar prazo" onClick={() => abrirGerarPrazo(pub)}><Clock size={14} /></Button>
                               )}
                               {isArquivada
-                                ? <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600" title="Restaurar" onClick={() => desarquivar(pub)}><ArchiveRestore size={14} /></Button>
-                                : <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => arquivar(pub)}><Archive size={14} /></Button>}
+                                ? <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600" title="Restaurar publicação" onClick={() => desarquivar(pub)}><ArchiveRestore size={14} /></Button>
+                                : <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar publicação" onClick={() => arquivar(pub)}><Archive size={14} /></Button>}
                             </>)}
                           </td>
                         </tr>
@@ -786,8 +786,8 @@ export default function Publicacoes() {
                     <UserX size={14} className="mr-1" /> Não é meu cliente
                   </Button>
                   {viewPub.status === 'arquivada'
-                    ? <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { desarquivar(viewPub); setViewPub(null); }}><ArchiveRestore size={14} className="mr-1" /> Restaurar</Button>
-                    : <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { arquivar(viewPub); setViewPub(null); }}><Archive size={14} className="mr-1" /> Arquivar</Button>}
+                    ? <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { desarquivar(viewPub); setViewPub(null); }}><ArchiveRestore size={14} className="mr-1" /> Restaurar publicação</Button>
+                    : <Button size="sm" variant="outline" className="text-slate-600" onClick={() => { arquivar(viewPub); setViewPub(null); }}><Archive size={14} className="mr-1" /> Arquivar publicação</Button>}
                   {viewPub.processoId && (
                     <Button size="sm" variant="outline" className="text-[#1e3a5f] border-[#1e3a5f]/30 hover:bg-blue-50" onClick={() => abrirAndamento(viewPub)}>
                       <ListPlus size={14} className="mr-1" /> Gerar Andamento

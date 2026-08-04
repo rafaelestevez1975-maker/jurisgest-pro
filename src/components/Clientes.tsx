@@ -359,8 +359,8 @@ export default function Clientes() {
                           {usuario.podeEditar && (<>
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Editar" onClick={() => { setEditCliente(cliente); setDialogOpen(true); }}><Edit size={13} /></Button>
                             {cliente.arquivado
-                              ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={() => handleRestaurar(cliente)}><ArchiveRestore size={13} /></Button>
-                              : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={() => setArquivarId(cliente.id)}><Archive size={13} /></Button>}
+                              ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar cliente" onClick={() => handleRestaurar(cliente)}><ArchiveRestore size={13} /></Button>
+                              : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar cliente" onClick={() => setArquivarId(cliente.id)}><Archive size={13} /></Button>}
                           </>)}
                         </td>
                       </tr>
@@ -512,7 +512,7 @@ export default function Clientes() {
           <p className="text-sm text-gray-600">O cliente sai da lista ativa, mas <b>não é excluído</b> — você pode restaurá-lo a qualquer momento em "Arquivados". Os processos vinculados são mantidos.</p>
           <DialogFooter>
             <Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
-            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && handleArquivar(arquivarId)}>Arquivar</Button>
+            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && handleArquivar(arquivarId)}>Arquivar cliente</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1315,8 +1315,8 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
           )}
           {usuario.podeEditar && (
             processo.arquivado
-              ? <Button size="sm" variant="outline" className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50" onClick={arquivarProc}><ArchiveRestore size={12} className="mr-1" />Restaurar</Button>
-              : <Button size="sm" variant="outline" className="h-7 text-xs text-slate-600" onClick={arquivarProc}><Archive size={12} className="mr-1" />Arquivar</Button>
+              ? <Button size="sm" variant="outline" className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50" onClick={arquivarProc}><ArchiveRestore size={12} className="mr-1" />Restaurar processo</Button>
+              : <Button size="sm" variant="outline" className="h-7 text-xs text-slate-600" onClick={arquivarProc}><Archive size={12} className="mr-1" />Arquivar processo</Button>
           )}
         </div>
       </div>
@@ -2286,8 +2286,8 @@ export default function Processos() {
                         )}
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={e => { e.stopPropagation(); setEditProcesso(proc); setPrefill(null); setDialogOpen(true); }}><Edit size={13} /></Button>
                         {proc.arquivado
-                          ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar" onClick={e => { e.stopPropagation(); restaurarProcesso(proc); }}><ArchiveRestore size={13} /></Button>
-                          : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar" onClick={e => { e.stopPropagation(); setArquivarId(proc.id); }}><Archive size={13} /></Button>}
+                          ? <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600 hover:text-green-700" title="Restaurar processo" onClick={e => { e.stopPropagation(); restaurarProcesso(proc); }}><ArchiveRestore size={13} /></Button>
+                          : <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-500 hover:text-slate-700" title="Arquivar processo" onClick={e => { e.stopPropagation(); setArquivarId(proc.id); }}><Archive size={13} /></Button>}
                       </>
                     )}
                     <ChevronRight size={14} className="text-gray-400" />
@@ -2435,7 +2435,7 @@ export default function Processos() {
           <p className="text-sm text-gray-600">O processo sai da lista ativa, mas <b>não é excluído</b> — os andamentos, prazos e publicações são mantidos, e você pode restaurá-lo em "Arquivados".</p>
           <DialogFooter>
             <Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
-            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarProcesso(arquivarId)}>Arquivar</Button>
+            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarProcesso(arquivarId)}>Arquivar processo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
