@@ -1715,9 +1715,15 @@ function DialogImportarLote({ onClose }: { onClose: () => void }) {
     const novosClientes: Cliente[] = [];
     const processos: Processo[] = [];
     const hoje = new Date().toISOString().split('T')[0];
+    // Dedup por DÍGITOS (ignora pontuação): não importa processo que já existe.
+    const digExistentes = new Set(state.processos.map(p => (p.numero || '').replace(/\D/g, '')).filter(Boolean));
+    let puladosDup = 0;
 
     for (let i = 0; i < selecionadas.length; i++) {
       const linha = selecionadas[i];
+      const digLinha = (linha.numero || '').replace(/\D/g, '');
+      if (digLinha && digExistentes.has(digLinha)) { puladosDup++; setProgresso({ atual: i + 1, total: selecionadas.length }); continue; }
+      if (digLinha) digExistentes.add(digLinha);
 
       // Resolve ou cria o cliente
       let clienteId = '';
@@ -1782,7 +1788,8 @@ function DialogImportarLote({ onClose }: { onClose: () => void }) {
     setImportando(false);
     toast.success(
       `${processos.length} processo(s) importado(s)` +
-      (novosClientes.length ? ` · ${novosClientes.length} novo(s) cliente(s) criado(s)` : '')
+      (novosClientes.length ? ` · ${novosClientes.length} novo(s) cliente(s) criado(s)` : '') +
+      (puladosDup ? ` · ${puladosDup} já existente(s) ignorado(s)` : '')
     );
     onClose();
   };
