@@ -48,7 +48,8 @@ export interface ParteProcesso {
 
 export interface Documento {
   id: string;
-  processoId: string;
+  processoId: string;      // vazio quando é documento avulso do cliente
+  clienteId?: string;      // preenchido quando o documento pertence ao cliente (sem processo)
   nome: string;
   tipo: string;        // 'defesa' | 'reclamação' | 'documento' | ...
   arquivoPath: string;

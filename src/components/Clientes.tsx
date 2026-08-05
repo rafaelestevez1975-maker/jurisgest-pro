@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { useApp, genId } from '../context';
-import type { Cliente, Processo, AreaDireito } from '../types';
+import { useState, useEffect } from 'react';
+import { useApp, genId, logAcao } from '../context';
+import { db } from '../lib/db';
+import type { Cliente, Processo, AreaDireito, Documento } from '../types';
 import { ProcessoDetalheDialog } from './Processos';
 import { CopiarNumero } from './CopiarNumero';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, User, Building2, Phone, Mail, MapPin, FileText, Scale, ChevronRight } from 'lucide-react';
+import { Plus, Search, Edit, Archive, ArchiveRestore, Upload, User, Building2, Phone, Mail, MapPin, FileText, Scale, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const AREAS_CLI: AreaDireito[] = ['cível','trabalhista','criminal','previdenciário','família','tributário','empresarial','administrativo','procon','outro'];
@@ -221,8 +222,40 @@ export default function Clientes() {
   const [viewProcesso, setViewProcesso] = useState<Processo | null>(null);
   const [procSearch, setProcSearch] = useState('');
   const [procArea, setProcArea] = useState('todas');
+  const [docsCliente, setDocsCliente] = useState<Documento[]>([]);
+  const [subindoDocCli, setSubindoDocCli] = useState(false);
 
   const abrirCliente = (c: Cliente) => { setViewCliente(c); setProcSearch(''); setProcArea('todas'); };
+
+  // Documentos avulsos do cliente (contratos sociais, planilhas, prints… — qualquer formato, sem vínculo a processo)
+  const carregarDocsCliente = (clienteId: string) => { db.listarDocumentosCliente(clienteId).then(setDocsCliente); };
+  useEffect(() => {
+    if (viewCliente) carregarDocsCliente(viewCliente.id);
+    else setDocsCliente([]);
+  }, [viewCliente?.id]);
+  const enviarDocsCliente = async (files: FileList | File[] | null) => {
+    if (!viewCliente) return;
+    const lista = files ? Array.from(files) : [];
+    if (!lista.length) return;
+    const LIMITE = 100 * 1024 * 1024; // 100 MB (limite do Storage)
+    const grande = lista.find(f => f.size > LIMITE);
+    if (grande) { toast.error(`"${grande.name}" tem ${(grande.size / 1048576).toFixed(0)} MB — acima do limite de 100 MB. Comprima o arquivo e tente novamente.`); return; }
+    setSubindoDocCli(true);
+    let ok = 0; const falhas: string[] = []; let ultimoErro = '';
+    for (const file of lista) {
+      const { error } = await db.uploadDocumentoCliente(viewCliente.id, file, 'documento');
+      if (error) { falhas.push(file.name); ultimoErro = (error as { message?: string })?.message || ultimoErro; }
+      else { ok++; logAcao('criar', 'documento', `Anexou documento "${file.name}" ao cliente ${viewCliente.nome}`); }
+    }
+    carregarDocsCliente(viewCliente.id);
+    setSubindoDocCli(false);
+    if (ok) toast.success(`${ok} documento(s) anexado(s).`);
+    if (falhas.length) toast.error(`Falha ao anexar ${falhas.length} (${falhas.slice(0, 2).join(', ')}${falhas.length > 2 ? '…' : ''})${ultimoErro ? ` — ${ultimoErro}` : ''}`);
+  };
+  const baixarDocCliente = async (d: Documento) => {
+    const url = await db.signedUrlDocumento(d.arquivoPath);
+    if (url) window.open(url, '_blank'); else toast.error('Não foi possível abrir o documento.');
+  };
 
   const termo = search.trim().toLowerCase();
   const filtered = state.clientes.filter(c => {
@@ -489,6 +522,45 @@ export default function Clientes() {
                   </div>
                 );
               })()}
+
+              {/* Documentos avulsos do cliente (sem vínculo a processo) */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase">
+                    Documentos do cliente ({docsCliente.filter(d => !d.arquivado).length}{docsCliente.some(d => d.arquivado) ? ` · ${docsCliente.filter(d => d.arquivado).length} inativo(s)` : ''})
+                  </p>
+                  {usuario.podeContribuir && (
+                    <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
+                      {subindoDocCli ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar documento(s)
+                      <input type="file" multiple className="hidden" disabled={subindoDocCli} onChange={e => { enviarDocsCliente(e.target.files); e.target.value = ''; }} />
+                    </label>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400 mb-2">Contratos sociais, procurações, planilhas, prints e demais arquivos — qualquer formato, sem vínculo a um processo.</p>
+                {docsCliente.length === 0
+                  ? <p className="text-xs text-gray-400">Nenhum documento avulso. Use "Anexar" para guardar arquivos do cliente que não pertencem a um processo específico.</p>
+                  : <div className="space-y-2">{[...docsCliente].sort((a, b) => Number(a.arquivado) - Number(b.arquivado)).map(d => (
+                    <div key={d.id} className={`flex items-center justify-between border rounded p-2 text-xs gap-2 ${d.arquivado ? 'bg-gray-50 opacity-75' : ''}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText size={14} className="text-gray-500 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className={`font-medium truncate ${d.arquivado ? 'line-through text-gray-400' : ''}`}>{d.nome}</p>
+                          <p className="text-gray-400 truncate">{d.arquivoNome}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {d.arquivado && <Badge className="bg-slate-200 text-slate-600 text-[10px]">inativo</Badge>}
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700" title="Baixar / abrir" onClick={() => baixarDocCliente(d)}><Download size={13} /></Button>
+                        {usuario.podeEditar && (d.arquivado ? (
+                          <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2 text-green-600 hover:text-green-700" title="Reativar documento" onClick={async () => { await db.setDocumentoArquivado(d.id, false); if (viewCliente) carregarDocsCliente(viewCliente.id); toast.success('Documento reativado.'); logAcao('editar', 'documento', `Reativou documento "${d.nome}" do cliente ${viewCliente?.nome ?? ''}`); }}>Reativar</Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2 text-slate-400 hover:text-amber-600" title="Inativar (o documento não é excluído, apenas fica inativo)" onClick={async () => { await db.setDocumentoArquivado(d.id, true); if (viewCliente) carregarDocsCliente(viewCliente.id); toast.success('Documento inativado.'); logAcao('editar', 'documento', `Inativou documento "${d.nome}" do cliente ${viewCliente?.nome ?? ''}`); }}>Inativar</Button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}</div>
+                }
+              </div>
             </div>
           )}
         </DialogContent>

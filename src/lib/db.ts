@@ -454,6 +454,23 @@ export const db = {
   // Documentos nunca são deletados — apenas inativados (arquivado = true/false).
   setDocumentoArquivado: (id: string, arquivado: boolean) => supabase.from('documentos').update({ arquivado }).eq('id', id),
 
+  // Documentos do CLIENTE (sem vínculo a processo): contratos sociais, planilhas, prints, etc. — qualquer formato.
+  listarDocumentosCliente: async (clienteId: string): Promise<Documento[]> => {
+    const { data } = await supabase.from('documentos').select('*').eq('cliente_id', clienteId).order('criado_em');
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id as string, processoId: (r.processo_id as string) ?? '', nome: r.nome as string,
+      tipo: r.tipo as string, arquivoPath: r.arquivo_path as string,
+      arquivoNome: r.arquivo_nome as string, criadoEm: r.criado_em as string,
+      arquivado: !!r.arquivado,
+    }));
+  },
+  uploadDocumentoCliente: async (clienteId: string, file: File, tipo = 'documento') => {
+    const path = `docs/cliente/${clienteId}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`;
+    const { error } = await supabase.storage.from('processos').upload(path, file, { upsert: false, contentType: file.type || undefined });
+    if (error) return { error };
+    return supabase.from('documentos').insert({ cliente_id: clienteId, nome: file.name, tipo, arquivo_path: path, arquivo_nome: file.name });
+  },
+
   // prazos
   upsertPrazo: (p: Prazo) => supabase.from('prazos').upsert(fromPrazo(p)),
   deletePrazo: (id: string) => supabase.from('prazos').delete().eq('id', id),
