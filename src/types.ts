@@ -1,5 +1,7 @@
 export type TipoPessoa = 'PF' | 'PJ';
 export type StatusProcesso = 'ativo' | 'suspenso' | 'arquivado' | 'ganho' | 'perdido' | 'acordo';
+// Natureza do registro: judicial exige nº CNJ; procon/administrativo aceitam protocolo próprio (sem CNJ)
+export type NaturezaProcesso = 'judicial' | 'procon' | 'administrativo';
 export type AreaDireito = 'cível' | 'trabalhista' | 'criminal' | 'previdenciário' | 'família' | 'tributário' | 'empresarial' | 'administrativo' | 'procon' | 'outro';
 export type FaseProcessual = 'conhecimento' | 'recursal' | 'execução' | 'outro';
 export type PoloProcesso = 'autor' | 'réu' | 'outro';
@@ -91,6 +93,7 @@ export interface Processo {
   valorCausa?: number;
   dataDistribuicao: string;
   status: StatusProcesso;
+  natureza?: NaturezaProcesso;  // judicial (padrão) | procon | administrativo — libera cadastro sem CNJ
   polo: PoloProcesso;
   objeto: string;
   arquivado?: boolean;

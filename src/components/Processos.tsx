@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp, genId, logAcao } from '../context';
 import { db } from '../lib/db';
-import type { Processo, Cliente, AreaDireito, FaseProcessual, StatusProcesso, PoloProcesso, Movimentacao, TipoPrazo, Prazo, Documento } from '../types';
+import type { Processo, Cliente, AreaDireito, FaseProcessual, StatusProcesso, PoloProcesso, NaturezaProcesso, Movimentacao, TipoPrazo, Prazo, Documento } from '../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -930,8 +930,15 @@ const emptyProcesso = (): Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'> =>
   numero: '', clienteId: '', vara: '', tribunal: '', comarca: '', uf: '', area: 'cível',
   fase: 'conhecimento', parteContraria: '', advogadoResponsavel: '', valorCausa: undefined,
   advogadoAdverso: '', advogadoAdversoTelefone: '', advogadoAdversoEmail: '',
-  dataDistribuicao: '', status: 'ativo', polo: 'autor', objeto: '', observacoes: '',
+  dataDistribuicao: '', status: 'ativo', natureza: 'judicial', polo: 'autor', objeto: '', observacoes: '',
 });
+
+// Rótulos por natureza — para adaptar o formulário e a exibição de Procon/administrativo.
+const NATUREZA_LABEL: Record<NaturezaProcesso, string> = {
+  judicial: 'Judicial (processo com nº CNJ)',
+  procon: 'Procon (reclamação / FA)',
+  administrativo: 'Administrativo / extrajudicial',
+};
 
 function ProcessoForm({ initial, onSave, onCancel }: {
   initial: Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>;
@@ -970,6 +977,7 @@ function ProcessoForm({ initial, onSave, onCancel }: {
 
   // Opções dos comboboxes: lista padrão + o que já foi usado nos processos (sugestões),
   // ordenado. O usuário ainda pode digitar um valor novo (allowCustom).
+  const isJudicial = (form.natureza ?? 'judicial') === 'judicial';
   const uniqSort = (arr: (string | undefined)[]) => Array.from(new Set(arr.filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const tribunalOpts = uniqSort([...TRIBUNAIS, ...state.processos.map(p => p.tribunal)]);
   const comarcaOpts = uniqSort(state.processos.map(p => p.comarca));
@@ -986,10 +994,20 @@ function ProcessoForm({ initial, onSave, onCancel }: {
       )}
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <Label className="text-xs">Número CNJ *</Label>
-          <Input className="mt-1 h-8 text-sm font-mono" value={form.numero} onChange={e => set('numero', e.target.value)} placeholder="0000000-00.0000.0.00.0000" />
-          {form.numero.trim() && form.numero.replace(/\D/g, '').length !== 20 && (
-            <p className="text-[11px] text-amber-600 mt-1 flex items-start gap-1"><AlertCircle size={11} className="flex-shrink-0 mt-0.5" /> Número fora do padrão CNJ (20 dígitos). Sem CNJ válido, os andamentos <b>não</b> serão capturados automaticamente pelo DataJud.</p>
+          <Label className="text-xs">Natureza do registro</Label>
+          <Select value={form.natureza ?? 'judicial'} onValueChange={v => set('natureza', v as NaturezaProcesso)}>
+            <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(NATUREZA_LABEL) as NaturezaProcesso[]).map(n => <SelectItem key={n} value={n}>{NATUREZA_LABEL[n]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {!isJudicial && <p className="text-[11px] text-gray-400 mt-1">Registro sem processo judicial — o número CNJ não é exigido. Use o protocolo do Procon (FA) ou do órgão.</p>}
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">{isJudicial ? 'Número CNJ *' : 'Nº do protocolo / FA (opcional)'}</Label>
+          <Input className="mt-1 h-8 text-sm font-mono" value={form.numero} onChange={e => set('numero', e.target.value)} placeholder={isJudicial ? '0000000-00.0000.0.00.0000' : 'Ex: FA 0123/2026 ou protocolo do órgão'} />
+          {isJudicial && form.numero.trim() && form.numero.replace(/\D/g, '').length !== 20 && (
+            <p className="text-[11px] text-amber-600 mt-1 flex items-start gap-1"><AlertCircle size={11} className="flex-shrink-0 mt-0.5" /> Número fora do padrão CNJ (20 dígitos). Sem CNJ válido, os andamentos <b>não</b> serão capturados automaticamente pelo DataJud. Se for reclamação no Procon ou caso extrajudicial, escolha a natureza acima.</p>
           )}
         </div>
         <div className="col-span-2">
@@ -997,8 +1015,8 @@ function ProcessoForm({ initial, onSave, onCancel }: {
           <ClienteCombo value={form.clienteId} onChange={v => set('clienteId', v)} clientes={state.clientes} />
         </div>
         <div>
-          <Label className="text-xs">Tribunal *</Label>
-          <ComboBox value={form.tribunal} onChange={v => { set('tribunal', v); if (/^(trt|tst)/i.test(v.trim())) set('area', 'trabalhista'); }} options={tribunalOpts} placeholder="Selecione ou digite..." />
+          <Label className="text-xs">{isJudicial ? 'Tribunal *' : 'Órgão / Procon'}</Label>
+          <ComboBox value={form.tribunal} onChange={v => { set('tribunal', v); if (/^(trt|tst)/i.test(v.trim())) set('area', 'trabalhista'); }} options={tribunalOpts} placeholder={isJudicial ? 'Selecione ou digite...' : 'Ex: PROCON Porto Alegre'} />
         </div>
         <div>
           <Label className="text-xs">Comarca</Label>
@@ -1100,7 +1118,13 @@ function ProcessoForm({ initial, onSave, onCancel }: {
       <DialogFooter>
         <Button variant="cancel" size="sm" onClick={onCancel}>Cancelar</Button>
         <Button size="sm" variant="success" onClick={() => {
-          if (!form.numero.trim() || !form.clienteId || !form.tribunal) { toast.error('Preencha número, cliente e tribunal.'); return; }
+          if (isJudicial) {
+            if (!form.numero.trim() || !form.clienteId || !form.tribunal) { toast.error('Preencha número, cliente e tribunal.'); return; }
+          } else {
+            // Procon / administrativo: número CNJ não é exigido; basta cliente e um identificador (nº, órgão ou objeto).
+            if (!form.clienteId) { toast.error('Selecione o cliente.'); return; }
+            if (!form.numero.trim() && !form.tribunal.trim() && !form.objeto.trim()) { toast.error('Informe ao menos o protocolo, o órgão/Procon ou o objeto do registro.'); return; }
+          }
           onSave(form, pendingMovs);
         }}>Salvar</Button>
       </DialogFooter>
@@ -1285,8 +1309,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
       <div className="flex items-start justify-between mb-4 gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
-            <p className="font-mono text-sm font-bold text-[#1e3a5f] truncate">{processo.numero}</p>
-            <CopiarNumero numero={processo.numero} size={13} />
+            <p className="font-mono text-sm font-bold text-[#1e3a5f] truncate">{processo.numero || (processo.natureza && processo.natureza !== 'judicial' ? '(sem nº de processo)' : '—')}</p>
+            {processo.numero && <CopiarNumero numero={processo.numero} size={13} />}
+            {processo.natureza === 'procon' && <Badge className="bg-purple-100 text-purple-700 text-[10px] px-1.5 flex-shrink-0">Procon</Badge>}
+            {processo.natureza === 'administrativo' && <Badge className="bg-slate-200 text-slate-700 text-[10px] px-1.5 flex-shrink-0">Administrativo</Badge>}
           </div>
           <p className="text-xs text-gray-500 mt-0.5 truncate">{processo.tribunal}{processo.comarca ? ` · ${processo.comarca}` : ''}{processo.uf ? `/${processo.uf}` : ''}</p>
           <p className="text-sm text-gray-800 mt-1 break-words">
@@ -1335,8 +1361,11 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
             {([
               ['Cliente', cliente?.nome, false],
-              ['Número (CNJ)', processo.numero, false],
-              ['Tribunal', processo.tribunal, false],
+              ...((processo.natureza && processo.natureza !== 'judicial')
+                ? [['Natureza', processo.natureza === 'procon' ? 'Procon (reclamação)' : 'Administrativo / extrajudicial', false]] as [string, string | undefined, boolean][]
+                : []),
+              [(processo.natureza && processo.natureza !== 'judicial') ? 'Nº protocolo / FA' : 'Número (CNJ)', processo.numero, false],
+              [(processo.natureza && processo.natureza !== 'judicial') ? 'Órgão / Procon' : 'Tribunal', processo.tribunal, false],
               ['Comarca', processo.comarca, false],
               ['Estado (UF)', processo.uf, false],
               ['Vara / Juízo', processo.vara, false],
@@ -2268,13 +2297,15 @@ export default function Processos() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1 min-w-0">
-                        <p className="font-mono text-xs font-bold text-[#1e3a5f] truncate">{proc.numero}</p>
-                        <CopiarNumero numero={proc.numero} size={11} />
+                        <p className="font-mono text-xs font-bold text-[#1e3a5f] truncate">{proc.numero || (proc.natureza && proc.natureza !== 'judicial' ? '(sem nº de processo)' : '—')}</p>
+                        {proc.numero && <CopiarNumero numero={proc.numero} size={11} />}
                       </div>
                       <p className="text-sm font-medium text-gray-800 mt-0.5">{cliente?.nome || '—'} <span className="text-gray-400">vs</span> {proc.parteContraria || '—'}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="text-xs text-gray-500">{proc.tribunal}{proc.comarca ? ` · ${proc.comarca}` : ''}</span>
-                        {(proc.numero || '').replace(/\D/g, '').length !== 20 && (
+                        {proc.natureza === 'procon' && <Badge className="bg-purple-100 text-purple-700 text-[10px] px-1.5" title="Reclamação no Procon (registro extrajudicial)">Procon</Badge>}
+                        {proc.natureza === 'administrativo' && <Badge className="bg-slate-200 text-slate-700 text-[10px] px-1.5" title="Registro administrativo / extrajudicial">Administrativo</Badge>}
+                        {(!proc.natureza || proc.natureza === 'judicial') && (proc.numero || '').replace(/\D/g, '').length !== 20 && (
                           <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5" title="Número fora do padrão CNJ (20 dígitos) — os andamentos não são capturados automaticamente pelo DataJud"><AlertCircle size={9} className="mr-0.5" />Sem CNJ</Badge>
                         )}
                         <Badge variant="outline" className="text-[10px] px-1.5 capitalize">{proc.area}</Badge>
