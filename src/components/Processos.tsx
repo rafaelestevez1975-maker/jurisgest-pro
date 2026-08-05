@@ -977,7 +977,11 @@ function ProcessoForm({ initial, onSave, onCancel }: {
 
   // Opções dos comboboxes: lista padrão + o que já foi usado nos processos (sugestões),
   // ordenado. O usuário ainda pode digitar um valor novo (allowCustom).
-  const isJudicial = (form.natureza ?? 'judicial') === 'judicial';
+  const natureza = form.natureza ?? 'judicial';
+  const isJudicial = natureza === 'judicial';
+  // Cada natureza tem seu próprio tipo de numeração (Procon usa FA/protocolo, não o CNJ).
+  const numeroLabel = natureza === 'procon' ? 'Número do Procon (FA / protocolo)' : natureza === 'administrativo' ? 'Nº do processo administrativo / protocolo' : 'Número CNJ *';
+  const numeroPlaceholder = natureza === 'procon' ? 'Ex: FA 0123/2026' : natureza === 'administrativo' ? 'Ex: protocolo 2026/000123' : '0000000-00.0000.0.00.0000';
   const uniqSort = (arr: (string | undefined)[]) => Array.from(new Set(arr.filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const tribunalOpts = uniqSort([...TRIBUNAIS, ...state.processos.map(p => p.tribunal)]);
   const comarcaOpts = uniqSort(state.processos.map(p => p.comarca));
@@ -1001,11 +1005,11 @@ function ProcessoForm({ initial, onSave, onCancel }: {
               {(Object.keys(NATUREZA_LABEL) as NaturezaProcesso[]).map(n => <SelectItem key={n} value={n}>{NATUREZA_LABEL[n]}</SelectItem>)}
             </SelectContent>
           </Select>
-          {!isJudicial && <p className="text-[11px] text-gray-400 mt-1">Registro sem processo judicial — o número CNJ não é exigido. Use o protocolo do Procon (FA) ou do órgão.</p>}
+          {!isJudicial && <p className="text-[11px] text-gray-400 mt-1">Registro extrajudicial — o número CNJ <b>não</b> é exigido. Use a numeração própria ({natureza === 'procon' ? 'FA / protocolo do Procon' : 'protocolo do órgão'}).</p>}
         </div>
         <div className="col-span-2">
-          <Label className="text-xs">{isJudicial ? 'Número CNJ *' : 'Nº do protocolo / FA (opcional)'}</Label>
-          <Input className="mt-1 h-8 text-sm font-mono" value={form.numero} onChange={e => set('numero', e.target.value)} placeholder={isJudicial ? '0000000-00.0000.0.00.0000' : 'Ex: FA 0123/2026 ou protocolo do órgão'} />
+          <Label className="text-xs">{numeroLabel}</Label>
+          <Input className="mt-1 h-8 text-sm font-mono" value={form.numero} onChange={e => set('numero', e.target.value)} placeholder={numeroPlaceholder} />
           {isJudicial && form.numero.trim() && form.numero.replace(/\D/g, '').length !== 20 && (
             <p className="text-[11px] text-amber-600 mt-1 flex items-start gap-1"><AlertCircle size={11} className="flex-shrink-0 mt-0.5" /> Número fora do padrão CNJ (20 dígitos). Sem CNJ válido, os andamentos <b>não</b> serão capturados automaticamente pelo DataJud. Se for reclamação no Procon ou caso extrajudicial, escolha a natureza acima.</p>
           )}
