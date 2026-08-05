@@ -1185,6 +1185,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
     onClose?.();
   };
   const [editando, setEditando] = useState(false);
+  const [confirmArquivar, setConfirmArquivar] = useState(false);
   const [novoPrazoTab, setNovoPrazoTab] = useState(false);
   const [novoPrazo, setNovoPrazo] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string; urgente: boolean }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '', urgente: false });
   // edição inline de um prazo já agendado (a partir da aba do processo)
@@ -1349,7 +1350,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
           {usuario.podeEditar && (
             processo.arquivado
               ? <Button size="sm" variant="outline" className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50" onClick={arquivarProc}><ArchiveRestore size={12} className="mr-1" />Restaurar processo</Button>
-              : <Button size="sm" variant="outline" className="h-7 text-xs text-slate-600" onClick={arquivarProc}><Archive size={12} className="mr-1" />Arquivar processo</Button>
+              : <Button size="sm" variant="outline" className="h-7 text-xs text-slate-600" onClick={() => setConfirmArquivar(true)}><Archive size={12} className="mr-1" />Arquivar processo</Button>
           )}
         </div>
       </div>
@@ -1639,11 +1640,26 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
           <DialogHeader><DialogTitle className="text-[#1e3a5f]">Editar Processo</DialogTitle></DialogHeader>
           {editando && (
             <ProcessoForm
-              initial={{ numero: processo.numero, clienteId: processo.clienteId, vara: processo.vara, tribunal: processo.tribunal, comarca: processo.comarca, area: processo.area, fase: processo.fase, parteContraria: processo.parteContraria, advogadoResponsavel: processo.advogadoResponsavel, advogadoAdverso: processo.advogadoAdverso, advogadoAdversoTelefone: processo.advogadoAdversoTelefone, advogadoAdversoEmail: processo.advogadoAdversoEmail, valorCausa: processo.valorCausa, dataDistribuicao: processo.dataDistribuicao, status: processo.status, polo: processo.polo, objeto: processo.objeto, observacoes: processo.observacoes }}
+              initial={{ numero: processo.numero, clienteId: processo.clienteId, vara: processo.vara, tribunal: processo.tribunal, comarca: processo.comarca, uf: processo.uf, area: processo.area, fase: processo.fase, parteContraria: processo.parteContraria, advogadoResponsavel: processo.advogadoResponsavel, advogadoAdverso: processo.advogadoAdverso, advogadoAdversoTelefone: processo.advogadoAdversoTelefone, advogadoAdversoEmail: processo.advogadoAdversoEmail, valorCausa: processo.valorCausa, dataDistribuicao: processo.dataDistribuicao, status: processo.status, natureza: processo.natureza, polo: processo.polo, objeto: processo.objeto, observacoes: processo.observacoes }}
               onSave={salvarEdicao}
               onCancel={() => setEditando(false)}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação de arquivamento (evita arquivar por engano) */}
+      <Dialog open={confirmArquivar} onOpenChange={setConfirmArquivar}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Arquivar este processo?</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-600">
+            Você está prestes a arquivar <b className="font-mono">{processo.numero || 'este registro'}</b>{cliente?.nome ? <> — <b>{cliente.nome}</b></> : null}.
+            {' '}Ele sai da lista de ativos, mas <b>não é excluído</b>: andamentos, prazos e documentos são mantidos e você pode restaurá-lo em "Arquivados".
+          </p>
+          <DialogFooter>
+            <Button variant="cancel" size="sm" onClick={() => setConfirmArquivar(false)}>Cancelar</Button>
+            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => { setConfirmArquivar(false); arquivarProc(); }}><Archive size={12} className="mr-1" />Arquivar processo</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -2477,11 +2493,20 @@ export default function Processos() {
       {/* Dialog Arquivar */}
       <Dialog open={!!arquivarId} onOpenChange={() => setArquivarId(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Arquivar processo</DialogTitle></DialogHeader>
-          <p className="text-sm text-gray-600">O processo sai da lista ativa, mas <b>não é excluído</b> — os andamentos, prazos e publicações são mantidos, e você pode restaurá-lo em "Arquivados".</p>
+          <DialogHeader><DialogTitle>Arquivar este processo?</DialogTitle></DialogHeader>
+          {(() => {
+            const pa = state.processos.find(p => p.id === arquivarId);
+            const ca = pa && state.clientes.find(c => c.id === pa.clienteId);
+            return (
+              <p className="text-sm text-gray-600">
+                {pa && <>Você está prestes a arquivar <b className="font-mono">{pa.numero || 'este registro'}</b>{ca?.nome ? <> — <b>{ca.nome}</b></> : null}. </>}
+                O processo sai da lista ativa, mas <b>não é excluído</b> — os andamentos, prazos e publicações são mantidos, e você pode restaurá-lo em "Arquivados".
+              </p>
+            );
+          })()}
           <DialogFooter>
             <Button variant="cancel" size="sm" onClick={() => setArquivarId(null)}>Cancelar</Button>
-            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarProcesso(arquivarId)}>Arquivar processo</Button>
+            <Button size="sm" className="bg-slate-500 hover:bg-slate-600" onClick={() => arquivarId && arquivarProcesso(arquivarId)}><Archive size={12} className="mr-1" />Arquivar processo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
