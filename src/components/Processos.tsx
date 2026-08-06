@@ -1193,6 +1193,11 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
   const [editPrazo, setEditPrazoForm] = useState<{ descricao: string; dataHora: string; tipo: TipoPrazo; responsavel: string; urgente: boolean }>({ descricao: '', dataHora: '', tipo: 'prazo_fatal', responsavel: '', urgente: false });
   const cliente = state.clientes.find(c => c.id === processo.clienteId);
   const prazosProc = state.prazos.filter(p => p.processoId === processo.id);
+  // "Em aberto" = ainda a cumprir (nem cumprido, nem cancelado). Os cumpridos permanecem na aba, riscados.
+  const prazoEmAberto = (p: Prazo) => p.status !== 'cumprido' && p.status !== 'cancelado';
+  const prazosAbertosProc = prazosProc.filter(prazoEmAberto);
+  // Abertos primeiro (assinalados); concluídos depois, mantendo o registro do que foi feito.
+  const prazosOrdenados = [...prazosProc].sort((a, b) => Number(prazoEmAberto(b)) - Number(prazoEmAberto(a)));
   const peticoesProc = state.peticoes.filter(p => p.processoId === processo.id);
   // Publicações do DJEN vinculadas ao processo — trazem a ÍNTEGRA de despachos/decisões
   // (o DataJud só dá o nome do movimento). Mescladas na linha do tempo dos andamentos.
@@ -1358,7 +1363,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
         <TabsList className="text-xs h-8">
           <TabsTrigger value="info" className="text-xs">Informações</TabsTrigger>
           <TabsTrigger value="movimentos" className="text-xs">Andamentos ({processo.movimentacoes.length})</TabsTrigger>
-          <TabsTrigger value="prazos" className="text-xs">Prazos ({prazosProc.length})</TabsTrigger>
+          <TabsTrigger value="prazos" className="text-xs">Prazos ({prazosAbertosProc.length})</TabsTrigger>
           <TabsTrigger value="peticoes" className="text-xs">Petições ({peticoesProc.length})</TabsTrigger>
           <TabsTrigger value="documentos" className="text-xs">Documentos ({documentos.length})</TabsTrigger>
         </TabsList>
@@ -1504,8 +1509,13 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
           })()}
         </TabsContent>
         <TabsContent value="prazos" className="mt-3 space-y-2">
-          {prazosProc.length === 0 && <p className="text-xs text-gray-400">Nenhum prazo vinculado.</p>}
-          {prazosProc.map(pr => {
+          {prazosProc.length === 0
+            ? <p className="text-xs text-gray-400">Nenhum prazo vinculado.</p>
+            : <p className="text-xs text-gray-500">
+                <b className="text-amber-700">{prazosAbertosProc.length}</b> em aberto
+                {prazosProc.length - prazosAbertosProc.length > 0 ? ` · ${prazosProc.length - prazosAbertosProc.length} concluído(s)/cancelado(s)` : ''}
+              </p>}
+          {prazosOrdenados.map(pr => {
             const concluido = pr.status === 'cumprido' || pr.status === 'cancelado';
             const [dt, hr] = pr.dataHora.split('T');
             if (editPrazoId === pr.id) {
@@ -1539,13 +1549,18 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
               );
             }
             return (
-            <div key={pr.id} className="flex items-center justify-between border rounded p-2 text-xs gap-2">
+            <div key={pr.id} className={`flex items-center justify-between border rounded p-2 text-xs gap-2 ${
+              concluido ? 'bg-gray-50/60' : pr.urgente ? 'border-l-4 border-l-red-500 bg-red-50/50' : 'border-l-4 border-l-amber-400 bg-amber-50/40'
+            }`}>
               <div className="min-w-0">
                 <p className={`font-medium break-words ${concluido ? 'line-through text-gray-400' : ''}`}>{pr.descricao}</p>
                 <p className="text-gray-400">{fmtDataBR(dt)}{hr && hr !== '23:59' ? ` ${hr.slice(0,5)}` : ''}{pr.responsavel ? ` · ${pr.responsavel.split(' ')[0]}` : ''} · <span className="capitalize">{pr.tipo.replace('_', ' ')}</span></p>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
-                <Badge variant="outline" className="capitalize text-[10px]">{pr.status}</Badge>
+                {!concluido && pr.urgente && <Badge className="bg-red-600 text-white text-[10px] px-1.5"><AlertTriangle size={9} className="mr-0.5" />Urgente</Badge>}
+                {concluido
+                  ? <Badge variant="outline" className="capitalize text-[10px] text-gray-400">{pr.status}</Badge>
+                  : <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5"><Clock size={9} className="mr-0.5" />Em aberto</Badge>}
                 {(usuario.podeEditar || (usuario.podeContribuir && (pr.responsavel === usuario.nome || pr.agendadoPor === usuario.nome))) && !concluido && (
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-400 hover:text-[#2563eb]" title="Editar prazo" onClick={() => iniciarEditPrazo(pr)}><Edit size={13} /></Button>
                 )}
