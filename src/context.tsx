@@ -30,14 +30,19 @@ export interface UsuarioAtual {
 function reportErro(p: unknown, label: string) {
   Promise.resolve(p as Promise<{ error?: unknown }>)
     .then(res => {
-      if (res && (res as { error?: unknown }).error) {
-        console.error('[sync]', label, (res as { error?: unknown }).error);
-        toast.error(`Não foi possível salvar (${label}). A alteração ficou no dispositivo; verifique a conexão.`);
+      const error = res && (res as { error?: unknown }).error;
+      if (error) {
+        console.error('[sync]', label, error);
+        // Mostra o motivo real (constraint/permissão) em vez de assumir "problema de conexão".
+        const msg = (error as { message?: string })?.message || '';
+        toast.error(msg
+          ? `Não foi possível salvar (${label}): ${msg}`
+          : `Não foi possível salvar (${label}). Verifique a conexão e recarregue.`);
       }
     })
     .catch(err => {
       console.error('[sync]', label, err);
-      toast.error(`Falha de conexão ao salvar (${label}).`);
+      toast.error(`Falha ao salvar (${label}): ${(err as Error)?.message || 'erro de conexão'}`);
     });
 }
 
