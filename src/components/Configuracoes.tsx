@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Plus, Building, Users, CalendarDays, Shield, Save, Brain, Eye, EyeOff, KeyRound, Loader2, Activity, Edit } from 'lucide-react';
+import { Plus, Building, Users, CalendarDays, Shield, Save, Brain, Eye, EyeOff, KeyRound, Loader2, Activity, Edit, Copy, X } from 'lucide-react';
 import Atividades from './Atividades';
 import { MultiSelect } from './Relatorios';
 import { toast } from 'sonner';
@@ -49,6 +49,8 @@ export default function Configuracoes() {
   const [novoAdv, setNovoAdv] = useState<{ nome: string; oab: string; email: string; papel: PapelUsuario; areas: AreaDireito[]; password: string }>({ nome: '', oab: '', email: '', papel: 'advogado', areas: [], password: '' });
   const [showPwd, setShowPwd] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
+  // Credenciais do último usuário criado, para o admin copiar e repassar
+  const [ultimaCred, setUltimaCred] = useState<{ email: string; senha: string; jaExistia: boolean } | null>(null);
   // Redefinição de senha de um usuário existente
   const [resetFor, setResetFor] = useState<Advogado | null>(null);
   const [resetPwd, setResetPwd] = useState('');
@@ -96,8 +98,10 @@ export default function Configuracoes() {
     setSavingUser(false);
     const msg = error?.message || data?.error;
     if (msg) { toast.error('Não foi possível criar o usuário: ' + msg); return; }
+    // A senha informada agora sempre vale (mesmo se o e-mail já existia no sistema).
+    setUltimaCred({ email: novoAdv.email.trim().toLowerCase(), senha: novoAdv.password, jaExistia: !!data?.jaExistia });
     toast.success(data?.jaExistia
-      ? 'A conta de e-mail já existia no sistema — acesso e perfil concedidos (senha mantida).'
+      ? 'Conta já existente vinculada e senha atualizada. Repasse o e-mail e a senha à pessoa.'
       : 'Usuário e login criados! Repasse o e-mail e a senha à pessoa.');
     setNovoAdv({ nome: '', oab: '', email: '', papel: 'advogado', areas: [], password: '' });
     setShowPwd(false);
@@ -310,6 +314,31 @@ export default function Configuracoes() {
                   {savingUser ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Plus size={12} className="mr-1" />}
                   {savingUser ? 'Criando login...' : 'Adicionar usuário'}
                 </Button>
+
+                {ultimaCred && (
+                  <div className="border border-green-300 bg-green-50 rounded p-3 space-y-2 mt-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-semibold text-green-800">Acesso pronto — repasse estes dados à pessoa</p>
+                      <button type="button" className="text-green-700/60 hover:text-green-800" onClick={() => setUltimaCred(null)}><X size={14} /></button>
+                    </div>
+                    <div className="text-xs text-gray-700 space-y-0.5">
+                      <p><span className="text-gray-500">Link:</span> <b>https://jurisgest-pro.vercel.app</b></p>
+                      <p><span className="text-gray-500">E-mail:</span> <b className="break-all">{ultimaCred.email}</b></p>
+                      <p><span className="text-gray-500">Senha:</span> <b className="font-mono">{ultimaCred.senha}</b></p>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-[11px] border-green-300 text-green-700 hover:bg-green-100"
+                      onClick={() => {
+                        const txt = `Acesse o JurisGest Pro:\nhttps://jurisgest-pro.vercel.app\n\nE-mail: ${ultimaCred.email}\nSenha: ${ultimaCred.senha}\n\nEntre com esse e-mail e senha. Recomendo trocar a senha depois.`;
+                        navigator.clipboard?.writeText(txt).then(
+                          () => toast.success('Dados de acesso copiados! Cole no WhatsApp/e-mail da pessoa.'),
+                          () => toast.error('Não foi possível copiar automaticamente — copie manualmente acima.'),
+                        );
+                      }}>
+                      <Copy size={12} className="mr-1" /> Copiar dados para enviar
+                    </Button>
+                    <p className="text-[10px] text-gray-500">A senha é exibida só aqui, agora. Depois de fechar, ela não fica visível — se precisar, use “Redefinir senha”.</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
