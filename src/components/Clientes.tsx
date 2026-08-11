@@ -237,9 +237,9 @@ export default function Clientes() {
     if (!viewCliente) return;
     const lista = files ? Array.from(files) : [];
     if (!lista.length) return;
-    const LIMITE = 100 * 1024 * 1024; // 100 MB (limite do Storage)
+    const LIMITE = 2 * 1024 * 1024 * 1024; // 2 GB (limite do Storage)
     const grande = lista.find(f => f.size > LIMITE);
-    if (grande) { toast.error(`"${grande.name}" tem ${(grande.size / 1048576).toFixed(0)} MB — acima do limite de 100 MB. Comprima o arquivo e tente novamente.`); return; }
+    if (grande) { toast.error(`"${grande.name}" tem ${(grande.size / 1073741824).toFixed(1)} GB — acima do limite de 2 GB do armazenamento.`); return; }
     setSubindoDocCli(true);
     let ok = 0; const falhas: string[] = []; let ultimoErro = '';
     for (const file of lista) {

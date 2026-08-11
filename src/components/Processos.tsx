@@ -1392,9 +1392,9 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
   const enviarDocs = async (files: FileList | File[] | null, tipo: string) => {
     const lista = files ? Array.from(files) : [];
     if (!lista.length) return;
-    const LIMITE = 100 * 1024 * 1024; // 100 MB (limite do Storage)
+    const LIMITE = 2 * 1024 * 1024 * 1024; // 2 GB (limite do Storage)
     const grande = lista.find(f => f.size > LIMITE);
-    if (grande) { toast.error(`"${grande.name}" tem ${(grande.size / 1048576).toFixed(0)} MB — acima do limite de 100 MB. Comprima o PDF e tente novamente.`); return; }
+    if (grande) { toast.error(`"${grande.name}" tem ${(grande.size / 1073741824).toFixed(1)} GB — acima do limite de 2 GB do armazenamento.`); return; }
     setSubindoDoc(true);
     let ok = 0; const falhas: string[] = []; let ultimoErro = '';
     for (const file of lista) {
@@ -1756,7 +1756,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
             {usuario.podeContribuir && (
               <label className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1.5 cursor-pointer hover:bg-blue-50 flex items-center gap-1.5">
                 {subindoDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Anexar documento(s)
-                <input type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.txt,.jpg,.jpeg,.png" disabled={subindoDoc} onChange={e => { enviarDocs(e.target.files, 'documento'); e.target.value = ''; }} />
+                <input type="file" multiple className="hidden" disabled={subindoDoc} onChange={e => { enviarDocs(e.target.files, 'documento'); e.target.value = ''; }} />
               </label>
             )}
           </div>
