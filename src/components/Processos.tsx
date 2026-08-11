@@ -399,6 +399,74 @@ Retorne APENAS o JSON, sem explicações.`,
   };
 }
 
+// Analisa um PDF (petição inicial, capa dos autos, decisão…) com o Claude e extrai os dados do processo.
+// Usa o bloco "document" da API (a IA lê texto + páginas do PDF).
+async function analisarPdfComClaude(
+  pdfBase64: string,
+  apiKey: string
+): Promise<{ dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>; partes: { poloAtivo: string; poloPassivo: string }; textoExtraido: string }> {
+  const content = [
+    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+    {
+      type: 'text',
+      text: `Este é um documento PDF de um processo judicial brasileiro (petição inicial, capa dos autos, decisão, andamento ou similar). Extraia APENAS os dados processuais em JSON válido com esta estrutura:
+{
+  "numero": "número CNJ completo (NNNNNNN-DD.AAAA.J.TT.OOOO) ou null",
+  "tribunal": "sigla do tribunal (ex: TJSP, TRT2, STJ) ou null",
+  "vara": "nome completo da vara ou juízo ou null",
+  "comarca": "cidade/comarca ou null",
+  "poloAtivo": "nome completo da parte autora/requerente ou null",
+  "poloPassivo": "nome completo da parte ré/requerida ou null",
+  "valorCausa": número em reais sem formatação ou null,
+  "dataDistribuicao": "data no formato YYYY-MM-DD ou null",
+  "classe": "classe processual (ex: Reclamação Trabalhista, Ação de Cobrança) ou null",
+  "assunto": "assunto principal do processo ou null",
+  "textoExtraido": "um resumo dos pontos relevantes do documento"
+}
+Retorne APENAS o JSON, sem explicações.`,
+    },
+  ];
+  const text = await chamarClaudeAPI(apiKey, content, 1500);
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('O Claude não retornou um JSON válido para o PDF.');
+  const parsed = JSON.parse(jsonMatch[0]);
+  return {
+    dados: {
+      numero: parsed.numero || '',
+      tribunal: parsed.tribunal || '',
+      vara: parsed.vara || '',
+      comarca: parsed.comarca || '',
+      valorCausa: parsed.valorCausa || undefined,
+      dataDistribuicao: parsed.dataDistribuicao || '',
+      area: inferirArea((parsed.classe || '') + ' ' + (parsed.assunto || '')),
+      parteContraria: parsed.poloPassivo || '',
+      status: 'ativo',
+      fase: 'conhecimento',
+      observacoes: parsed.assunto ? `Assunto: ${parsed.assunto}` : '',
+    },
+    partes: { poloAtivo: parsed.poloAtivo || '', poloPassivo: parsed.poloPassivo || '' },
+    textoExtraido: parsed.textoExtraido || '',
+  };
+}
+
+// Lê um arquivo como base64 puro (sem o prefixo data:...;base64,).
+function lerArquivoBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo.'));
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.readAsDataURL(file);
+  });
+}
+
+// Reconstrói um File a partir de base64 (para anexar o PDF de origem ao processo criado).
+function base64ParaArquivo(base64: string, nome: string, mime = 'application/pdf'): File {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], nome, { type: mime });
+}
+
 // Resumo do caso com IA a partir dos dados já preenchidos do processo.
 async function resumirCasoComClaude(apiKey: string, contexto: string): Promise<string> {
   const text = await chamarClaudeAPI(apiKey,
@@ -457,11 +525,12 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
 }) {
   const { state } = useApp();
   const apiKey = state.anthropicApiKey;
-  const [tab, setTab] = useState<'imagem' | 'texto' | 'datajud'>('imagem');
+  const [tab, setTab] = useState<'imagem' | 'pdf' | 'texto' | 'datajud'>('imagem');
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [imagens, setImagens] = useState<{ base64: string; mime: string; dataUrl: string; nome: string }[]>([]);
   const [comprimindo, setComprimindo] = useState(false);
+  const [pdf, setPdf] = useState<{ base64: string; nome: string; tamanho: number } | null>(null);
   const [texto, setTexto] = useState('');
   const [resultado, setResultado] = useState<{
     dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>>;
@@ -490,6 +559,31 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
     setLoading(true); setErro(''); setResultado(null);
     try {
       const res = await analisarComClaudeVision(imagens.map(i => ({ base64: i.base64, mime: i.mime })), apiKey);
+      setResultado({ dados: res.dados, partes: res.partes, consultarDataJud: !!res.dados.numero });
+    } catch (e: any) { setErro(e.message); }
+    setLoading(false);
+  };
+
+  const handlePdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = (e.target.files || [])[0];
+    e.target.value = '';
+    if (!file) return;
+    setErro(''); setResultado(null);
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { setErro('Selecione um arquivo PDF.'); return; }
+    const LIMITE = 30 * 1024 * 1024; // ~30 MB (limite prático da API para documentos)
+    if (file.size > LIMITE) { setErro(`O PDF tem ${(file.size / 1048576).toFixed(0)} MB — acima do limite de 30 MB. Envie um arquivo menor (ex.: só a petição inicial ou a capa).`); return; }
+    try {
+      const base64 = await lerArquivoBase64(file);
+      setPdf({ base64, nome: file.name, tamanho: file.size });
+    } catch (err: any) { setErro(err.message || 'Falha ao ler o PDF.'); }
+  };
+
+  const analisarPdf = async () => {
+    if (!apiKey) { setErro('Configure a Chave API Anthropic nas Configurações do sistema primeiro.'); return; }
+    if (!pdf) { setErro('Selecione um PDF.'); return; }
+    setLoading(true); setErro(''); setResultado(null);
+    try {
+      const res = await analisarPdfComClaude(pdf.base64, apiKey);
       setResultado({ dados: res.dados, partes: res.partes, consultarDataJud: !!res.dados.numero });
     } catch (e: any) { setErro(e.message); }
     setLoading(false);
@@ -562,7 +656,11 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
     const _image = (tab === 'imagem' && imagens.length)
       ? { base64: imagens[0].base64, mime: imagens[0].mime, nome: imagens[0].nome }
       : undefined;
-    onPreencherFormulario({ ...dadosLimpos, clienteId, movimentacoes: movs, _image } as any);
+    // Anexa o PDF de origem como documento do processo
+    const _pdf = (tab === 'pdf' && pdf)
+      ? { base64: pdf.base64, nome: pdf.nome }
+      : undefined;
+    onPreencherFormulario({ ...dadosLimpos, clienteId, movimentacoes: movs, _image, _pdf } as any);
     onClose();
   };
 
@@ -583,10 +681,13 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
       <Tabs value={tab} onValueChange={v => { setTab(v as any); setResultado(null); setErro(''); }}>
         <TabsList className="w-full h-9 text-xs">
           <TabsTrigger value="imagem" className="flex-1 text-xs flex items-center gap-1.5">
-            <ImageIcon size={12} /> Upload de Imagem
+            <ImageIcon size={12} /> Imagem
+          </TabsTrigger>
+          <TabsTrigger value="pdf" className="flex-1 text-xs flex items-center gap-1.5">
+            <FileText size={12} /> PDF
           </TabsTrigger>
           <TabsTrigger value="texto" className="flex-1 text-xs flex items-center gap-1.5">
-            <FileText size={12} /> Colar Texto
+            <FileText size={12} /> Texto
           </TabsTrigger>
           <TabsTrigger value="datajud" className="flex-1 text-xs flex items-center gap-1.5">
             <Wifi size={12} /> DataJud API
@@ -624,6 +725,41 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
           {imagens.length > 0 && (
             <Button className="w-full h-9 bg-[#2563eb] hover:bg-blue-700 text-sm" onClick={analisarImagem} disabled={loading || comprimindo}>
               {loading ? <><Loader2 size={14} className="animate-spin mr-2" />Analisando com IA...</> : <><Brain size={14} className="mr-2" />Analisar {imagens.length > 1 ? `${imagens.length} imagens` : 'imagem'} com IA</>}
+            </Button>
+          )}
+        </TabsContent>
+
+        {/* ── ABA PDF ── */}
+        <TabsContent value="pdf" className="space-y-3 mt-3">
+          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
+            <p className="font-semibold flex items-center gap-1.5"><Brain size={12} />Análise de PDF por IA (Claude)</p>
+            <p className="mt-0.5">Envie o <b>PDF</b> do processo (petição inicial, capa dos autos, decisão, andamento…). A IA lê o documento e extrai número, partes, vara, tribunal, valor e data. O PDF fica anexado ao processo cadastrado.</p>
+          </div>
+          <input type="file" accept="application/pdf,.pdf" id="pdf-upload" className="hidden" onChange={handlePdf} />
+          {pdf ? (
+            <div className="flex items-center justify-between border rounded p-2.5 text-xs gap-2 bg-gray-50">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText size={16} className="text-red-500 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{pdf.nome}</p>
+                  <p className="text-gray-400">{(pdf.tamanho / 1048576).toFixed(1)} MB</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setPdf(null)} title="Remover" className="text-gray-400 hover:text-red-500 flex-shrink-0"><X size={14} /></button>
+            </div>
+          ) : (
+            <label htmlFor="pdf-upload" className="cursor-pointer block border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-blue-300 transition-colors">
+              <div className="py-4">
+                <FileText size={28} className="mx-auto text-gray-300 mb-1" />
+                <p className="text-sm text-gray-500 font-medium">Clique para selecionar um PDF</p>
+                <p className="text-xs text-gray-400 mt-1">Um arquivo PDF, até 30 MB</p>
+              </div>
+            </label>
+          )}
+          {noApiKey && <p className="text-[11px] text-amber-600">A leitura de PDF exige a Chave API Anthropic (Configurações → Integrações IA).</p>}
+          {pdf && (
+            <Button className="w-full h-9 bg-[#2563eb] hover:bg-blue-700 text-sm" onClick={analisarPdf} disabled={loading || noApiKey}>
+              {loading ? <><Loader2 size={14} className="animate-spin mr-2" />Analisando PDF com IA...</> : <><Brain size={14} className="mr-2" />Analisar PDF com IA</>}
             </Button>
           )}
         </TabsContent>
@@ -2059,6 +2195,7 @@ export default function Processos() {
   const [formKey, setFormKey] = useState(0);
   // print pendente (extraído por imagem) a ser salvo no Storage ao cadastrar
   const [pendingImage, setPendingImage] = useState<{ base64: string; mime: string; nome: string } | null>(null);
+  const [pendingPdf, setPendingPdf] = useState<{ base64: string; nome: string } | null>(null);
 
   const arquivadosCount = state.processos.filter(p => p.arquivado).length;
   const procById = useMemo(() => new Map(state.processos.map(p => [p.id, p])), [state.processos]);
@@ -2168,15 +2305,17 @@ export default function Processos() {
     toast.success('Processo restaurado.');
   };
 
+  const limparPendencias = () => { setPendingImage(null); setPendingPdf(null); };
+
   const handleSave = async (data: Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>, movs?: Movimentacao[]) => {
     if (editProcesso) {
       dispatch({ type: 'UPDATE_PROCESSO', payload: { ...editProcesso, ...data } });
       toast.success('Processo atualizado!');
-      setDialogOpen(false); setEditProcesso(null); setPrefill(null); setPendingImage(null);
+      setDialogOpen(false); setEditProcesso(null); setPrefill(null); limparPendencias();
       return;
     }
 
-    // Evita duplicar: se já existe processo com o mesmo número, anexa o print a ele
+    // Evita duplicar: se já existe processo com o mesmo número, anexa o print/PDF a ele
     const numeroLimpo = (data.numero || '').replace(/\D/g, '');
     const existente = numeroLimpo
       ? state.processos.find(p => p.numero.replace(/\D/g, '') === numeroLimpo)
@@ -2190,10 +2329,14 @@ export default function Processos() {
         } else {
           toast.error('Não foi possível salvar o print.');
         }
+      } else if (pendingPdf) {
+        const { error } = await db.uploadDocumento(existente.id, base64ParaArquivo(pendingPdf.base64, pendingPdf.nome), 'documento');
+        if (error) toast.error('Não foi possível anexar o PDF ao processo existente.');
+        else toast.success('Processo já cadastrado — PDF anexado a ele.');
       } else {
         toast.info('Processo já cadastrado — abrindo o existente.');
       }
-      setDialogOpen(false); setEditProcesso(null); setPrefill(null); setPendingImage(null);
+      setDialogOpen(false); setEditProcesso(null); setPrefill(null); limparPendencias();
       setViewProcesso(existente);
       return;
     }
@@ -2206,24 +2349,31 @@ export default function Processos() {
       const up = await db.uploadProcessoImagem(id, pendingImage.base64, pendingImage.mime, pendingImage.nome);
       if (up.path) { imagemPath = up.path; imagemNome = pendingImage.nome; origem = 'imagem'; }
     }
-    dispatch({
-      type: 'ADD_PROCESSO',
-      payload: { ...data, id, origem, imagemPath, imagemNome, movimentacoes: movs || [], criadoEm: new Date().toISOString().split('T')[0] },
-    });
-    toast.success(pendingImage ? 'Processo cadastrado com o print anexado!' : 'Processo cadastrado!');
-    setDialogOpen(false); setEditProcesso(null); setPrefill(null); setPendingImage(null);
+    const novo: Processo = { ...data, id, origem, imagemPath, imagemNome, movimentacoes: movs || [], criadoEm: new Date().toISOString().split('T')[0] };
+    dispatch({ type: 'ADD_PROCESSO', payload: novo });
+    if (pendingPdf) {
+      // Garante que o processo já exista no banco antes de anexar o documento (FK), depois envia o PDF.
+      await db.upsertProcesso(novo);
+      const { error } = await db.uploadDocumento(id, base64ParaArquivo(pendingPdf.base64, pendingPdf.nome), 'documento');
+      if (error) toast.error('Processo criado, mas não foi possível anexar o PDF. Anexe-o depois na aba Documentos.');
+      else toast.success('Processo cadastrado com o PDF anexado!');
+    } else {
+      toast.success(pendingImage ? 'Processo cadastrado com o print anexado!' : 'Processo cadastrado!');
+    }
+    setDialogOpen(false); setEditProcesso(null); setPrefill(null); limparPendencias();
   };
 
-  const handleDataJudPrefill = (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[]; _image?: { base64: string; mime: string; nome: string } }) => {
-    const { _image, ...rest } = dados;
+  const handleDataJudPrefill = (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[]; _image?: { base64: string; mime: string; nome: string }; _pdf?: { base64: string; nome: string } }) => {
+    const { _image, _pdf, ...rest } = dados;
     setPendingImage(_image || null);
+    setPendingPdf(_pdf || null);
     const base = emptyProcesso();
     setPrefill({ ...base, ...rest });
     setEditProcesso(null);
     setFormKey(k => k + 1);
     setDatajudOpen(false);
     setDialogOpen(true);
-    toast.success(_image ? 'Dados extraídos do print — confira e salve.' : 'Formulário pré-preenchido!');
+    toast.success(_image ? 'Dados extraídos do print — confira e salve.' : _pdf ? 'Dados extraídos do PDF — confira e salve.' : 'Formulário pré-preenchido!');
   };
 
   // filter(Boolean): remove tribunais vazios — um <SelectItem value=""> quebra o Radix Select
