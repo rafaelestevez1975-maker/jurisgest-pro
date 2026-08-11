@@ -2049,7 +2049,7 @@ export default function Processos() {
   const [editProcesso, setEditProcesso] = useState<Processo | null>(null);
   const [viewProcesso, setViewProcesso] = useState<Processo | null>(null);
   const [arquivarId, setArquivarId] = useState<string | null>(null);
-  const [mostrarArquivados, setMostrarArquivados] = useState(false);
+  const [filterArquivo, setFilterArquivo] = useState<'ativos' | 'arquivados' | 'todos'>('ativos');
   const [soAlerta, setSoAlerta] = useState(false);
   const [soNovos, setSoNovos] = useState(false);
   const [soBloqueio, setSoBloqueio] = useState(false);
@@ -2136,8 +2136,12 @@ export default function Processos() {
     toast.success(`Processo marcado como ${situacao}.`);
   };
 
+  const buscando = search.trim() !== '';
   const filtered = state.processos.filter(p => {
-    if (mostrarArquivados ? !p.arquivado : !!p.arquivado) return false;
+    // Ativos x Arquivados: 'todos' mostra ambos; 'arquivados' só arquivados;
+    // 'ativos' esconde arquivados ao navegar, mas ao BUSCAR alcança arquivados também (marcados com selo).
+    if (filterArquivo === 'arquivados' && !p.arquivado) return false;
+    if (filterArquivo === 'ativos' && p.arquivado && !buscando) return false;
     if (!usuario.podeVerProcesso(p)) return false;
     if (soAlerta && !p.alertaArquivamento?.ativo) return false;
     if (soNovos && !p.alertaNovo) return false;
@@ -2281,9 +2285,16 @@ export default function Processos() {
             {tribunaisUnicos.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button variant={mostrarArquivados ? 'default' : 'outline'} size="sm" className={`h-9 text-xs ${mostrarArquivados ? 'bg-slate-500 hover:bg-slate-600' : ''}`} onClick={() => setMostrarArquivados(v => !v)}>
-          <Archive size={14} className="mr-1" /> {mostrarArquivados ? 'Ver ativos' : `Arquivados${arquivadosCount ? ` (${arquivadosCount})` : ''}`}
-        </Button>
+        <Select value={filterArquivo} onValueChange={v => setFilterArquivo(v as 'ativos' | 'arquivados' | 'todos')}>
+          <SelectTrigger className={`h-9 text-xs w-44 ${filterArquivo !== 'ativos' ? 'border-slate-400 text-slate-700' : ''}`}>
+            <Archive size={14} className="mr-1 flex-shrink-0" /><SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ativos">Somente ativos</SelectItem>
+            <SelectItem value="arquivados">Somente arquivados{arquivadosCount ? ` (${arquivadosCount})` : ''}</SelectItem>
+            <SelectItem value="todos">Ativos + arquivados</SelectItem>
+          </SelectContent>
+        </Select>
         {alertaCount > 0 && (
           <Button variant={soAlerta ? 'default' : 'outline'} size="sm"
             className={`h-9 text-xs ${soAlerta ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}`}
@@ -2323,7 +2334,7 @@ export default function Processos() {
           const cliente = state.clientes.find(c => c.id === proc.clienteId);
           const prazosProc = state.prazos.filter(p => p.processoId === proc.id && p.status === 'pendente').length;
           return (
-            <Card key={proc.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => setViewProcesso(proc)}>
+            <Card key={proc.id} className={`hover:shadow-md transition-shadow cursor-pointer ${proc.arquivado ? 'bg-slate-50 border-slate-200' : ''}`} onClick={() => setViewProcesso(proc)}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -2355,6 +2366,7 @@ export default function Processos() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {proc.arquivado && <Badge className="bg-slate-200 text-slate-600 text-[10px] px-1.5" title="Processo arquivado"><Archive size={9} className="mr-0.5" />Arquivado</Badge>}
                     <Badge className={`${statusColor[proc.status]} capitalize text-[10px]`}>{proc.status}</Badge>
                     {usuario.podeEditar && (
                       <>
