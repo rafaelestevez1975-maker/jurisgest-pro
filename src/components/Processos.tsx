@@ -25,7 +25,7 @@ const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','P
 
 // Combobox com busca no topo + opção de criar um valor novo digitando.
 // Guarda texto livre (tribunal/comarca/UF); o que já foi usado vira sugestão.
-function ComboBox({ value, onChange, options, placeholder = 'Selecione ou digite...', allowCustom = true }: {
+export function ComboBox({ value, onChange, options, placeholder = 'Selecione ou digite...', allowCustom = true }: {
   value: string;
   onChange: (v: string) => void;
   options: string[];
@@ -1587,8 +1587,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                 <div><Label className="text-xs">Data</Label><Input type="date" className="mt-1 h-7 text-xs" value={novaMov.data} onChange={e => setNovaMov(m => ({...m, data: e.target.value}))} /></div>
                 <div>
                   <Label className="text-xs">Tipo do andamento</Label>
-                  <Input list="dl-andamento" className="mt-1 h-7 text-xs" placeholder="Observação, Acordo, Suspenso…" value={novaMov.tipo} onChange={e => setNovaMov(m => ({...m, tipo: e.target.value}))} />
-                  <datalist id="dl-andamento">{TIPOS_ANDAMENTO.map(t => <option key={t} value={t} />)}</datalist>
+                  <ComboBox value={novaMov.tipo} onChange={v => setNovaMov(m => ({...m, tipo: v}))} options={TIPOS_ANDAMENTO} placeholder="Observação, Acordo, Suspenso…" />
                 </div>
               </div>
               <div><Label className="text-xs">Descrição</Label><Textarea className="mt-1 text-xs" rows={2} value={novaMov.descricao} onChange={e => setNovaMov(m => ({...m, descricao: e.target.value}))} /></div>

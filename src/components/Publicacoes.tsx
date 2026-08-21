@@ -3,7 +3,7 @@ import { useApp, genId, logAcao } from '../context';
 import { supabase } from '../lib/supabase';
 import { adicionarDiasUteis } from '../data';
 import type { Publicacao, Processo, StatusPublicacao, Movimentacao, TipoPrazo } from '../types';
-import { TIPOS_ANDAMENTO, ProcessoDetalheDialog } from './Processos';
+import { TIPOS_ANDAMENTO, ProcessoDetalheDialog, ComboBox } from './Processos';
 import { CopiarNumero } from './CopiarNumero';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -911,8 +911,7 @@ export default function Publicacoes() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-xs">Tipo</Label>
-                <Input list="dl-and-pub" className="mt-1 h-8 text-sm" placeholder="Acordo, Sentença…" value={andForm.tipo} onChange={e => setAndForm(f => ({ ...f, tipo: e.target.value }))} />
-                <datalist id="dl-and-pub">{TIPOS_ANDAMENTO.map(t => <option key={t} value={t} />)}</datalist>
+                <ComboBox value={andForm.tipo} onChange={v => setAndForm(f => ({ ...f, tipo: v }))} options={TIPOS_ANDAMENTO} placeholder="Acordo, Sentença…" />
               </div>
               <div><Label className="text-xs">Data</Label><Input type="date" className="mt-1 h-8 text-sm" value={andForm.data} onChange={e => setAndForm(f => ({ ...f, data: e.target.value }))} /></div>
             </div>
