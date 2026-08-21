@@ -380,7 +380,7 @@ export default function Relatorios() {
             <div>
               <Label className="text-[10px] text-gray-400 uppercase">Advogado / Responsável</Label>
               <MultiSelect label="Advogado" width="w-full" selected={advogadosSel} onChange={setAdvogadosSel}
-                options={advogados.map(a => ({ value: a.nome, label: a.nome }))} />
+                options={advogados.filter(a => a.ativo !== false).map(a => ({ value: a.nome, label: a.nome }))} />
             </div>
 
             <div>
@@ -556,7 +556,7 @@ export default function Relatorios() {
             </div>
             <div>
               <Label className="text-[10px] text-gray-400 uppercase">Responsável</Label>
-              <MultiSelect label="Responsável" options={advogados.map(a => ({ value: a.nome, label: a.nome }))} selected={advogadosSel} onChange={setAdvogadosSel} width="w-52" emptyLabel="Todos" />
+              <MultiSelect label="Responsável" options={advogados.filter(a => a.ativo !== false).map(a => ({ value: a.nome, label: a.nome }))} selected={advogadosSel} onChange={setAdvogadosSel} width="w-52" emptyLabel="Todos" />
             </div>
           </div>
           <p className="text-sm text-gray-600"><b className="text-[#1e3a5f]">{audiencias.length}</b> audiência(s) em {nomeMes(mesAud)}</p>

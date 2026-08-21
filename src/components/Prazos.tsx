@@ -196,14 +196,14 @@ function PrazoForm({ initial, onSave, onCancel }: {
           <Label className="text-xs">Responsável <span className="text-gray-400">(cumpre o prazo)</span> *</Label>
           <Select value={form.responsavel} onValueChange={v => set('responsavel', v)}>
             <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="A quem foi delegado..." /></SelectTrigger>
-            <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
+            <SelectContent>{state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div>
           <Label className="text-xs">Agendado por <span className="text-gray-400">(dá o OK final)</span></Label>
           <Select value={form.agendadoPor || ''} onValueChange={v => set('agendadoPor', v)}>
             <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Quem delegou..." /></SelectTrigger>
-            <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
+            <SelectContent>{state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div>
@@ -526,7 +526,7 @@ export default function Prazos() {
             options={(() => {
               const cont = new Map<string, number>();
               state.prazos.filter(p => p.status === 'pendente').forEach(p => { const r = p.responsavel || ''; if (r) cont.set(r, (cont.get(r) || 0) + 1); });
-              return [...new Set([...state.advogados.map(a => a.nome), ...state.prazos.map(p => p.responsavel)])]
+              return [...new Set([...state.advogados.filter(a => a.ativo !== false).map(a => a.nome), ...state.prazos.map(p => p.responsavel)])]
                 .filter(Boolean)
                 .sort((a, b) => (cont.get(b) || 0) - (cont.get(a) || 0) || a.localeCompare(b))
                 .map(n => ({ value: n, label: `${n}${cont.get(n) ? ` (${cont.get(n)} pend.)` : ''}` }));
@@ -538,7 +538,7 @@ export default function Prazos() {
             <SelectTrigger className="h-8 text-xs w-48"><SelectValue placeholder="Ver como" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Ver como: todos</SelectItem>
-              {state.advogados.map(a => (
+              {state.advogados.filter(a => a.ativo !== false).map(a => (
                 <SelectItem key={a.id} value={a.nome}>
                   {a.nome}{a.areas && a.areas.length ? ` — ${a.areas.length} área${a.areas.length > 1 ? 's' : ''}` : ''}
                 </SelectItem>
@@ -692,7 +692,7 @@ export default function Prazos() {
               <Select value={cienciaNome} onValueChange={setCienciaNome}>
                 <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  {state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}
+                  {state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -733,7 +733,7 @@ export default function Prazos() {
                   <Label className="text-xs">Quem está dando o OK final</Label>
                   <Select value={okNome} onValueChange={setOkNome}>
                     <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
+                    <SelectContent>{state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               </div>

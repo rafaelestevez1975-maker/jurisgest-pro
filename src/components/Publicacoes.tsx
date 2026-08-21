@@ -877,7 +877,7 @@ export default function Publicacoes() {
               <Select value={prazoResp} onValueChange={setPrazoResp}>
                 <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione o advogado..." /></SelectTrigger>
                 <SelectContent>
-                  {state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}
+                  {state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

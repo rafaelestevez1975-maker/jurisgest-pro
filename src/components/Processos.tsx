@@ -1236,7 +1236,7 @@ function ProcessoForm({ initial, onSave, onCancel }: {
           <Select value={form.advogadoResponsavel} onValueChange={v => set('advogadoResponsavel', v)}>
             <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
             <SelectContent>
-              {state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}
+              {state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}
               <SelectItem value="_outro">Outro</SelectItem>
             </SelectContent>
           </Select>
@@ -1672,7 +1672,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                   <Label className="text-xs">Responsável</Label>
                   <Select value={editPrazo.responsavel} onValueChange={v => setEditPrazoForm(p => ({ ...p, responsavel: v }))}>
                     <SelectTrigger className="mt-1 h-7 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
+                    <SelectContent>{state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <label className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 cursor-pointer text-xs w-fit ${editPrazo.urgente ? 'bg-red-50 border-red-300 text-red-700 font-semibold' : 'bg-white border-gray-200 text-gray-600'}`}>
@@ -1728,7 +1728,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                 <Label className="text-xs">Responsável</Label>
                 <Select value={novoPrazo.responsavel} onValueChange={v => setNovoPrazo(p => ({ ...p, responsavel: v }))}>
                   <SelectTrigger className="mt-1 h-7 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>{state.advogados.map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
+                  <SelectContent>{state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <label className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 cursor-pointer text-xs w-fit ${novoPrazo.urgente ? 'bg-red-50 border-red-300 text-red-700 font-semibold' : 'bg-white border-gray-200 text-gray-600'}`}>
