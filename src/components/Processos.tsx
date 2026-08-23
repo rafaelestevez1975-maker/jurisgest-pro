@@ -1494,6 +1494,10 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
       ? { ...processo, movimentacoes: processo.movimentacoes.map(m => m.id === editMovId ? { ...m, ...dados } : m) }
       : { ...processo, movimentacoes: [...processo.movimentacoes, { id: genId(), ...dados }] };
     dispatch({ type: 'UPDATE_PROCESSO', payload: updated });
+    // Rastreabilidade: registra quem lançou/editou o andamento (usuário logado).
+    logAcao(editMovId ? 'editar' : 'criar', 'andamento',
+      `${editMovId ? 'Editou' : 'Lançou'} andamento "${dados.descricao}"${dados.tipo ? ` (${dados.tipo})` : ''} no processo ${processo.numero}`,
+      processo.id);
     setNovaMov({ data: '', tipo: '', descricao: '', valor: '' });
     setNovaMovTab(false);
     toast.success(editMovId ? 'Andamento atualizado!' : 'Andamento adicionado!');

@@ -382,7 +382,8 @@ export default function Prazos() {
     const p = state.prazos.find(p => p.id === id);
     if (!p) return;
     const quem = usuario.nome || p.responsavel || 'O responsável';
-    dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, cumpridoDeclaradoEm: new Date().toISOString(), cumpridoDeclaradoPor: p.responsavel || '' } });
+    // Registra QUEM executou (usuário logado), para rastreabilidade.
+    dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, cumpridoDeclaradoEm: new Date().toISOString(), cumpridoDeclaradoPor: usuario.nome || p.responsavel || '' } });
     // Avisa quem delegou (agendou) — e, se diferente, também o responsável definido.
     const destinos = Array.from(new Set([p.agendadoPor, p.responsavel].filter(n => n && n !== quem))) as string[];
     for (const destino of destinos) {
@@ -401,12 +402,13 @@ export default function Prazos() {
     dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, cumpridoDeclaradoEm: undefined, cumpridoDeclaradoPor: undefined } });
   };
 
-  // 2) Quem agendou dá o OK final e o prazo é BAIXADO (status = cumprido)
-  const darOkFinal = (id: string, nome: string) => {
+  // 2) Baixa final: registra automaticamente o usuário logado como quem baixou.
+  const darOkFinal = (id: string) => {
     const p = state.prazos.find(p => p.id === id);
     if (!p) return;
-    dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'cumprido', aprovadoEm: new Date().toISOString(), aprovadoPor: nome || p.agendadoPor || '' } });
-    toast.success(`Prazo baixado${nome ? ` com OK de ${nome}` : ''}.`);
+    const quem = usuario.nome || p.agendadoPor || '';
+    dispatch({ type: 'UPDATE_PRAZO', payload: { ...p, status: 'cumprido', aprovadoEm: new Date().toISOString(), aprovadoPor: quem } });
+    toast.success(`Prazo baixado${quem ? ` por ${quem}` : ''}.`);
     setOkFinalId(null); setOkNome('');
   };
 
@@ -729,19 +731,15 @@ export default function Prazos() {
                   </div>
                 )}
                 <p className="text-sm text-gray-600">Confirme o OK final. O prazo será <b>baixado</b> (marcado como cumprido) e sai da lista de pendentes.</p>
-                <div>
-                  <Label className="text-xs">Quem está dando o OK final</Label>
-                  <Select value={okNome} onValueChange={setOkNome}>
-                    <SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>{state.advogados.filter(a => a.ativo !== false).map(a => <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>)}</SelectContent>
-                  </Select>
+                <div className="text-xs bg-blue-50 border border-blue-100 rounded p-2 text-blue-800">
+                  Baixando como <b>{usuario.nome}</b> — fica registrado automaticamente para rastreabilidade.
                 </div>
               </div>
             );
           })()}
           <DialogFooter>
             <Button variant="cancel" size="sm" onClick={() => { setOkFinalId(null); setOkNome(''); }}>Cancelar</Button>
-            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => okFinalId && darOkFinal(okFinalId, okNome)}>
+            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => okFinalId && darOkFinal(okFinalId)}>
               <CheckCircle size={13} className="mr-1" /> Dar OK e baixar
             </Button>
           </DialogFooter>

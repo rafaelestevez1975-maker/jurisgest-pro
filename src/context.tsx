@@ -195,7 +195,11 @@ function descreverAtividade(action: Action): { acao: string; entidade: string; e
     case 'UPDATE_PROCESSO': return { acao: o?.arquivado ? 'arquivar' : 'editar', entidade: 'processo', entidade_id: s(o?.id), descricao: `${o?.arquivado ? 'Arquivou' : 'Atualizou'} processo ${s(o?.numero)}` };
     case 'DELETE_PROCESSO': return { acao: 'excluir', entidade: 'processo', entidade_id: s(p), descricao: 'Excluiu um processo' };
     case 'ADD_PRAZO': return { acao: 'agendar', entidade: 'prazo', entidade_id: s(o?.id), descricao: `Agendou: ${s(o?.descricao)}${o?.dataHora ? ' — ' + s(o.dataHora).split('T')[0] : ''}` };
-    case 'UPDATE_PRAZO': return { acao: 'editar', entidade: 'prazo', entidade_id: s(o?.id), descricao: `Atualizou prazo: ${s(o?.descricao)}` };
+    case 'UPDATE_PRAZO':
+      // Detecta a BAIXA (status cumprido) e o cancelamento para dar rastreabilidade específica.
+      if ((o as { status?: string })?.status === 'cumprido') return { acao: 'cumprir', entidade: 'prazo', entidade_id: s(o?.id), descricao: `Baixou o prazo: ${s(o?.descricao)}` };
+      if ((o as { status?: string })?.status === 'cancelado') return { acao: 'arquivar', entidade: 'prazo', entidade_id: s(o?.id), descricao: `Cancelou o prazo: ${s(o?.descricao)}` };
+      return { acao: 'editar', entidade: 'prazo', entidade_id: s(o?.id), descricao: `Atualizou prazo: ${s(o?.descricao)}` };
     case 'DELETE_PRAZO': return { acao: 'excluir', entidade: 'prazo', entidade_id: s(p), descricao: 'Excluiu um prazo' };
     case 'ADD_PUBLICACAO': return { acao: 'criar', entidade: 'publicacao', entidade_id: s(o?.id), descricao: `Adicionou publicação (${s(o?.tribunal)})` };
     case 'UPDATE_PUBLICACAO': return { acao: 'editar', entidade: 'publicacao', entidade_id: s(o?.id), descricao: `Atualizou publicação ${s(o?.numeroProcesso)}` };
