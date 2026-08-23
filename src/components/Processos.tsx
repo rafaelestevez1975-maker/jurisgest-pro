@@ -467,6 +467,47 @@ function base64ParaArquivo(base64: string, nome: string, mime = 'application/pdf
   return new File([bytes], nome, { type: mime });
 }
 
+// ─── Identificação de qual das partes é o NOSSO cliente ───────────────────────
+// Evita a confusão de cadastrar todos como autor/reclamante e não achar o cliente.
+function normParte(s: string): string {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+// Uma parte "é" o nosso cliente se os nomes coincidirem (um contém o outro) ou o CPF/CNPJ bater.
+function parteEhCliente(nomeParte: string, cliente: { nome: string; cpfCnpj?: string }): boolean {
+  const p = normParte(nomeParte);
+  const c = normParte(cliente.nome);
+  const cDoc = (cliente.cpfCnpj || '').replace(/\D/g, '');
+  const pDoc = (nomeParte || '').replace(/\D/g, '');
+  if (cDoc.length >= 11 && pDoc.includes(cDoc)) return true;   // CPF/CNPJ é prova definitiva
+  if (!p || c.length < 4) return false;
+  return p === c || p.includes(c) || (c.includes(p) && p.length >= 4);
+}
+// Descobre qual polo (autor/réu) é o nosso cliente e quem é a parte contrária.
+function identificarCliente(
+  poloAtivo: string,
+  poloPassivo: string,
+  clientes: { id: string; nome: string; cpfCnpj?: string }[]
+): { clienteId: string; polo: PoloProcesso; parteContraria: string } | null {
+  for (const c of clientes) {
+    if (poloAtivo && parteEhCliente(poloAtivo, c)) return { clienteId: c.id, polo: 'autor', parteContraria: poloPassivo || '' };
+    if (poloPassivo && parteEhCliente(poloPassivo, c)) return { clienteId: c.id, polo: 'réu', parteContraria: poloAtivo || '' };
+  }
+  return null;
+}
+// Com um cliente já escolhido, define o polo dele e a parte contrária conforme autor/réu.
+function resolverPoloCliente(
+  clienteId: string,
+  poloAtivo: string,
+  poloPassivo: string,
+  clientes: { id: string; nome: string; cpfCnpj?: string }[]
+): { polo: PoloProcesso; parteContraria: string } | null {
+  const c = clientes.find(x => x.id === clienteId);
+  if (!c) return null;
+  if (poloAtivo && parteEhCliente(poloAtivo, c)) return { polo: 'autor', parteContraria: poloPassivo || '' };
+  if (poloPassivo && parteEhCliente(poloPassivo, c)) return { polo: 'réu', parteContraria: poloAtivo || '' };
+  return null;
+}
+
 // Resumo do caso com IA a partir dos dados já preenchidos do processo.
 async function resumirCasoComClaude(apiKey: string, contexto: string): Promise<string> {
   const text = await chamarClaudeAPI(apiKey,
@@ -647,6 +688,12 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
     setConsultandoDataJud(false);
   };
 
+  // Auto-identifica qual das partes é o nosso cliente e pré-seleciona (o usuário pode trocar).
+  const clienteDetectado = resultado ? identificarCliente(resultado.partes.poloAtivo, resultado.partes.poloPassivo, state.clientes) : null;
+  useEffect(() => {
+    if (clienteDetectado) setClienteId(clienteDetectado.clienteId);
+  }, [resultado]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const confirmar = () => {
     if (!resultado) return;
     const dados = resultado.dados as any;
@@ -660,7 +707,11 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
     const _pdf = (tab === 'pdf' && pdf)
       ? { base64: pdf.base64, nome: pdf.nome }
       : undefined;
-    onPreencherFormulario({ ...dadosLimpos, clienteId, movimentacoes: movs, _image, _pdf } as any);
+    // Ajusta o polo (autor/réu) e a parte contrária conforme o cliente escolhido.
+    const resolvido = clienteId ? resolverPoloCliente(clienteId, resultado.partes.poloAtivo, resultado.partes.poloPassivo, state.clientes) : null;
+    const polo = resolvido?.polo ?? dadosLimpos.polo;
+    const parteContraria = resolvido?.parteContraria ?? dadosLimpos.parteContraria;
+    onPreencherFormulario({ ...dadosLimpos, polo, parteContraria, clienteId, movimentacoes: movs, _image, _pdf } as any);
     onClose();
   };
 
@@ -837,6 +888,12 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
           )}
           <div className="px-3 pb-3 border-t pt-3">
             <Label className="text-xs font-semibold">Vincular a cliente cadastrado</Label>
+            {clienteDetectado && (
+              <div className="mt-1 mb-1.5 text-[11px] bg-green-50 border border-green-200 rounded px-2 py-1.5 text-green-800 flex items-start gap-1.5">
+                <CheckCircle2 size={13} className="flex-shrink-0 mt-0.5" />
+                <span>Nosso cliente identificado: <b>{state.clientes.find(c => c.id === clienteDetectado.clienteId)?.nome}</b> — polo <b>{clienteDetectado.polo === 'autor' ? 'autor/reclamante' : 'réu/reclamado'}</b>. Parte contrária: <b>{clienteDetectado.parteContraria || '—'}</b>.</span>
+              </div>
+            )}
             <ClienteCombo value={clienteId} onChange={setClienteId} clientes={state.clientes} />
           </div>
         </div>
@@ -898,11 +955,19 @@ function DialogBuscarDataJud({ onPreencherFormulario, onClose, embedded }: {
   const polePassivo = resultado?.partes.find(p => p.polo?.toLowerCase().includes('passiv'));
   const poleAtivo = resultado?.partes.find(p => p.polo?.toLowerCase().includes('ativ'));
 
+  // Auto-identifica qual das partes é o nosso cliente e pré-seleciona.
+  const clienteDetectado = resultado ? identificarCliente(poleAtivo?.nome || '', polePassivo?.nome || '', state.clientes) : null;
+  useEffect(() => {
+    if (clienteDetectado) setClienteId(clienteDetectado.clienteId);
+  }, [resultado]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const confirmar = () => {
     if (!resultado) return;
     const movs: Movimentacao[] = resultado.movimentos.map(m => ({
       id: genId(), data: m.data, tipo: 'Movimentação', descricao: m.nome,
     }));
+    // Define polo (autor/réu) e parte contrária conforme o cliente escolhido.
+    const resolvido = clienteId ? resolverPoloCliente(clienteId, poleAtivo?.nome || '', polePassivo?.nome || '', state.clientes) : null;
     onPreencherFormulario({
       numero: resultado.numero,
       tribunal: resultado.tribunal,
@@ -910,7 +975,8 @@ function DialogBuscarDataJud({ onPreencherFormulario, onClose, embedded }: {
       comarca: resultado.orgaoJulgador.replace(/vara.*/i, '').trim(),
       area: inferirArea(resultado.classe + ' ' + resultado.assunto),
       fase: resultado.grau === '2' ? 'recursal' : 'conhecimento',
-      parteContraria: polePassivo?.nome || '',
+      polo: resolvido?.polo,
+      parteContraria: resolvido?.parteContraria ?? (polePassivo?.nome || ''),
       valorCausa: resultado.valorCausa,
       dataDistribuicao: resultado.dataAjuizamento,
       status: 'ativo',
@@ -1029,8 +1095,14 @@ function DialogBuscarDataJud({ onPreencherFormulario, onClose, embedded }: {
             {/* Vincular cliente */}
             <div className="border-t pt-3">
               <Label className="text-xs font-semibold">Vincular a um cliente cadastrado</Label>
+              {clienteDetectado && (
+                <div className="mt-1 mb-1.5 text-[11px] bg-green-50 border border-green-200 rounded px-2 py-1.5 text-green-800 flex items-start gap-1.5">
+                  <CheckCircle2 size={13} className="flex-shrink-0 mt-0.5" />
+                  <span>Nosso cliente identificado: <b>{state.clientes.find(c => c.id === clienteDetectado.clienteId)?.nome}</b> — polo <b>{clienteDetectado.polo === 'autor' ? 'autor/reclamante' : 'réu/reclamado'}</b>. Parte contrária: <b>{clienteDetectado.parteContraria || '—'}</b>.</span>
+                </div>
+              )}
               <ClienteCombo value={clienteId} onChange={setClienteId} clientes={state.clientes} />
-              <p className="text-[10px] text-gray-400 mt-1">Parte ativa identificada: <strong>{poleAtivo?.nome || '—'}</strong></p>
+              <p className="text-[10px] text-gray-400 mt-1">Polo ativo: <strong>{poleAtivo?.nome || '—'}</strong> · Polo passivo: <strong>{polePassivo?.nome || '—'}</strong></p>
             </div>
           </div>
         </div>
