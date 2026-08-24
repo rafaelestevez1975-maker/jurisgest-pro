@@ -2348,12 +2348,11 @@ export default function Processos() {
     toast.success(`Processo marcado como ${situacao}.`);
   };
 
-  const buscando = search.trim() !== '';
   const filtered = state.processos.filter(p => {
     // Ativos x Arquivados: 'todos' mostra ambos; 'arquivados' só arquivados;
     // 'ativos' esconde arquivados ao navegar, mas ao BUSCAR alcança arquivados também (marcados com selo).
     if (filterArquivo === 'arquivados' && !p.arquivado) return false;
-    if (filterArquivo === 'ativos' && p.arquivado && !buscando) return false;
+    if (filterArquivo === 'ativos' && p.arquivado) return false;
     if (!usuario.podeVerProcesso(p)) return false;
     if (soAlerta && !p.alertaArquivamento?.ativo) return false;
     if (soNovos && !p.alertaNovo) return false;
@@ -2559,7 +2558,7 @@ export default function Processos() {
           const cliente = state.clientes.find(c => c.id === proc.clienteId);
           const prazosProc = state.prazos.filter(p => p.processoId === proc.id && p.status === 'pendente').length;
           return (
-            <Card key={proc.id} className={`hover:shadow-md transition-shadow cursor-pointer ${proc.arquivado ? 'bg-slate-50 border-slate-200' : ''}`} onClick={() => setViewProcesso(proc)}>
+            <Card key={proc.id} className={`hover:shadow-md transition-shadow cursor-pointer ${proc.arquivado ? 'bg-slate-200/70 border-slate-400 border-l-4 border-l-slate-500' : ''}`} onClick={() => setViewProcesso(proc)}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -2591,8 +2590,9 @@ export default function Processos() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {proc.arquivado && <Badge className="bg-slate-200 text-slate-600 text-[10px] px-1.5" title="Processo arquivado"><Archive size={9} className="mr-0.5" />Arquivado</Badge>}
-                    <Badge className={`${statusColor[proc.status]} capitalize text-[10px]`}>{proc.status}</Badge>
+                    {proc.arquivado
+                      ? <Badge className="bg-slate-600 text-white text-[10px] px-1.5" title="Processo arquivado no sistema (inativo)"><Archive size={9} className="mr-0.5" />Arquivado</Badge>
+                      : <Badge className={`${statusColor[proc.status]} capitalize text-[10px]`}>{proc.status}</Badge>}
                     {usuario.podeEditar && (
                       <>
                         {(proc.alertaArquivamento?.ativo || proc.alertaNovo) && (
