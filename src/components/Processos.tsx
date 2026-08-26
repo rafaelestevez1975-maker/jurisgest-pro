@@ -1449,6 +1449,21 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
     setEditPrazoId(null);
     toast.success('Prazo atualizado!');
   };
+  // Operação/responsável declara que cumpriu — fica aguardando o OK final de quem agendou.
+  const declararCumpridoProc = (pr: Prazo) => {
+    dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, cumpridoDeclaradoEm: new Date().toISOString(), cumpridoDeclaradoPor: usuario.nome } });
+    const destinos = Array.from(new Set([pr.agendadoPor, pr.responsavel].filter(n => n && n !== usuario.nome))) as string[];
+    for (const destino of destinos) {
+      db.criarNotificacao({
+        paraNome: destino,
+        titulo: 'Tarefa cumprida — aguardando seu OK',
+        mensagem: `${usuario.nome} marcou como cumprida a tarefa "${pr.descricao}"${processo.numero ? ` (processo ${processo.numero})` : ''}. Dê o OK final para baixá-la.`,
+        prazoId: pr.id, processoId: pr.processoId || undefined,
+      }).then(() => {}).catch(() => { /* não bloqueia */ });
+    }
+    logAcao('editar', 'prazo', `Marcou como cumprida a tarefa "${pr.descricao}" (aguardando OK)`, pr.id);
+    toast.success(pr.agendadoPor ? `Marcado como cumprido — ${pr.agendadoPor} foi avisado para dar o OK.` : 'Marcado como cumprido — aguardando OK de quem agendou.');
+  };
   const [imgUrl, setImgUrl] = useState('');
   useEffect(() => {
     let ativo = true;
@@ -1771,15 +1786,21 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                 {!concluido && pr.urgente && <Badge className="bg-red-600 text-white text-[10px] px-1.5"><AlertTriangle size={9} className="mr-0.5" />Urgente</Badge>}
                 {concluido
                   ? <Badge variant="outline" className="capitalize text-[10px] text-gray-400">{pr.status}</Badge>
-                  : <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5"><Clock size={9} className="mr-0.5" />Em aberto</Badge>}
+                  : pr.cumpridoDeclaradoEm
+                    ? <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5" title={`Cumprido por ${pr.cumpridoDeclaradoPor || pr.responsavel || '—'} — aguardando OK de quem agendou`}><Clock size={9} className="mr-0.5" />Aguardando OK{pr.agendadoPor ? ` de ${pr.agendadoPor.split(' ')[0]}` : ''}</Badge>
+                    : <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5"><Clock size={9} className="mr-0.5" />Em aberto</Badge>}
                 {(usuario.podeEditar || (usuario.podeContribuir && (pr.responsavel === usuario.nome || pr.agendadoPor === usuario.nome))) && !concluido && (
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-400 hover:text-[#2563eb]" title="Editar prazo" onClick={() => iniciarEditPrazo(pr)}><Edit size={13} /></Button>
+                )}
+                {/* Operação (responsável) declara que cumpriu — quem agendou confirma depois */}
+                {!concluido && !pr.cumpridoDeclaradoEm && !usuario.podeEditar && usuario.podeCumprir && pr.responsavel === usuario.nome && (
+                  <Button size="sm" className="h-7 text-[10px] px-2 bg-green-600 hover:bg-green-700" title="Marcar que você cumpriu — quem agendou dá o OK final" onClick={() => declararCumpridoProc(pr)}><CheckCircle size={12} className="mr-1" />Cumpri</Button>
                 )}
                 {usuario.podeEditar && (concluido ? (
                   <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2 text-blue-600 hover:text-blue-700" onClick={() => dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'pendente', aprovadoEm: undefined, aprovadoPor: undefined, cumpridoDeclaradoEm: undefined, cumpridoDeclaradoPor: undefined } })}>Reabrir</Button>
                 ) : (
                   <>
-                    <Button size="sm" className="h-7 text-[10px] px-2 bg-green-600 hover:bg-green-700" onClick={() => { dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'cumprido', aprovadoEm: new Date().toISOString(), aprovadoPor: usuario.nome } }); toast.success('Prazo concluído (baixado).'); }}>Concluir</Button>
+                    <Button size="sm" className="h-7 text-[10px] px-2 bg-green-600 hover:bg-green-700" title={pr.cumpridoDeclaradoEm ? 'Dar o OK final e baixar' : 'Concluir e baixar'} onClick={() => { dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'cumprido', aprovadoEm: new Date().toISOString(), aprovadoPor: usuario.nome } }); toast.success('Prazo concluído (baixado).'); }}>{pr.cumpridoDeclaradoEm ? 'Dar OK' : 'Concluir'}</Button>
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-slate-400 hover:text-red-500" title="Cancelar prazo" onClick={() => { dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'cancelado' } }); toast.info('Prazo cancelado.'); }}><X size={13} /></Button>
                   </>
                 ))}
