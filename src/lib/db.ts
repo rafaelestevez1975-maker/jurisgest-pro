@@ -395,8 +395,12 @@ export const db = {
     supabase.from('jg_atividades').select('*').order('criado_em', { ascending: false }).limit(limite),
 
   // "Não é meu cliente": ignora o número (a captura para de trazer intimações dele) e arquiva as publicações existentes.
-  ignorarNumeroProcesso: (numeroLimpo: string, motivo?: string, por?: string) =>
-    supabase.from('jg_numeros_ignorados').upsert({ numero: numeroLimpo, motivo: motivo || null, criado_por: por || null }, { onConflict: 'numero' }),
+  // Insere só se ainda não estiver na lista (evita o UPDATE do upsert, que a tabela não permite por RLS).
+  ignorarNumeroProcesso: async (numeroLimpo: string, motivo?: string, por?: string) => {
+    const { data: existe } = await supabase.from('jg_numeros_ignorados').select('numero').eq('numero', numeroLimpo).maybeSingle();
+    if (existe) return { data: existe, error: null };
+    return supabase.from('jg_numeros_ignorados').insert({ numero: numeroLimpo, motivo: motivo || null, criado_por: por || null });
+  },
   arquivarPublicacoesDoNumero: (numeroMascara: string) =>
     supabase.from('publicacoes').update({ status: 'arquivada' }).eq('numero_processo', numeroMascara),
 

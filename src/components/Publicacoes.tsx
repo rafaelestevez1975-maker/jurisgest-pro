@@ -416,8 +416,11 @@ export default function Publicacoes() {
     const numeroLimpo = (pub.numeroProcesso || '').replace(/\D/g, '');
     if (!numeroLimpo) { toast.error('Publicação sem número de processo — não dá para ignorar.'); return; }
     try {
-      await db.ignorarNumeroProcesso(numeroLimpo, 'Marcado como "não é meu cliente"', usuario.nome);
-      await db.arquivarPublicacoesDoNumero(pub.numeroProcesso);
+      // Cada passo agora verifica o erro do Supabase (que NÃO lança exceção sozinho).
+      const r1 = await db.ignorarNumeroProcesso(numeroLimpo, 'Marcado como "não é meu cliente"', usuario.nome);
+      if ((r1 as { error?: { message?: string } })?.error) { toast.error('Não foi possível ignorar o processo: ' + ((r1 as { error?: { message?: string } }).error!.message || '')); return; }
+      const r2 = await db.arquivarPublicacoesDoNumero(pub.numeroProcesso);
+      if ((r2 as { error?: { message?: string } })?.error) { toast.error('Ignorado, mas falhou ao arquivar as publicações: ' + ((r2 as { error?: { message?: string } }).error!.message || '')); return; }
       const proc = state.processos.find(p => p.id === pub.processoId || (p.numero || '').replace(/\D/g, '') === numeroLimpo);
       if (proc && !proc.arquivado) dispatch({ type: 'UPDATE_PROCESSO', payload: { ...proc, arquivado: true } });
       logAcao('excluir', 'publicacao', `Marcou "não é meu cliente" — ignora futuras intimações do processo ${pub.numeroProcesso}`, proc?.id);
