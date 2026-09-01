@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useApp, genId, logAcao } from '../context';
 import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 import { adicionarDiasUteis } from '../data';
 import type { Publicacao, Processo, StatusPublicacao, Movimentacao, TipoPrazo } from '../types';
 import { TIPOS_ANDAMENTO, ProcessoDetalheDialog, ComboBox } from './Processos';
