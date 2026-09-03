@@ -1794,7 +1794,7 @@ export function ProcessoDetalhe({ processo: processoProp, onClose }: { processo:
                 )}
                 {/* Operação (responsável) declara que cumpriu — quem agendou confirma depois */}
                 {!concluido && !pr.cumpridoDeclaradoEm && !usuario.podeEditar && usuario.podeCumprir && pr.responsavel === usuario.nome && (
-                  <Button size="sm" className="h-7 text-[10px] px-2 bg-green-600 hover:bg-green-700" title="Marcar que você cumpriu — quem agendou dá o OK final" onClick={() => declararCumpridoProc(pr)}><CheckCircle size={12} className="mr-1" />Cumpri</Button>
+                  <Button size="sm" className="h-7 text-[10px] px-2 bg-green-600 hover:bg-green-700" title="Marcar que você cumpriu — quem agendou dá o OK final" onClick={() => declararCumpridoProc(pr)}><CheckCircle2 size={12} className="mr-1" />Cumpri</Button>
                 )}
                 {usuario.podeEditar && (concluido ? (
                   <Button size="sm" variant="ghost" className="h-7 text-[10px] px-2 text-blue-600 hover:text-blue-700" onClick={() => dispatch({ type: 'UPDATE_PRAZO', payload: { ...pr, status: 'pendente', aprovadoEm: undefined, aprovadoPor: undefined, cumpridoDeclaradoEm: undefined, cumpridoDeclaradoPor: undefined } })}>Reabrir</Button>
