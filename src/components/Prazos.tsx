@@ -87,7 +87,7 @@ const emptyPrazo = (): Omit<Prazo, 'id' | 'criadoEm'> => ({
 });
 
 // Seletor de processo com busca — opcional (agendamento pode não ter processo)
-function ProcessoPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+export function ProcessoPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
   const { state } = useApp();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');

@@ -3,6 +3,7 @@ import { useApp, genId } from '../context';
 import { supabase } from '../lib/supabase';
 import type { Peticao, TipoPeticao, StatusPeticao, Processo } from '../types';
 import { ProcessoDetalheDialog } from './Processos';
+import { ProcessoPicker } from './Prazos';
 import { CopiarNumero } from './CopiarNumero';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -377,6 +378,174 @@ function DialogGerarIA({ onSalvar, onClose }: {
   );
 }
 
+// ─── Importar petições em lote (a IA lê o conteúdo para vincular ao processo) ──
+const soDigPet = (s: string) => (s || '').replace(/\D/g, '');
+function extrairCnjTexto(texto: string): string {
+  const m = (texto || '').match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+  if (m) return m[0];
+  const d = soDigPet(texto).match(/\d{20}/);
+  return d ? d[0] : '';
+}
+function lerArquivoB64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.readAsDataURL(file);
+  });
+}
+// Usa o Claude para detectar o número CNJ dentro de um PDF ou imagem.
+async function detectarCnjIA(file: File, apiKey: string): Promise<string> {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  const isImg = (file.type || '').startsWith('image/');
+  if (!isPdf && !isImg) return '';
+  try {
+    const base64 = await lerArquivoB64(file);
+    const bloco = isPdf
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+      : { type: 'image', source: { type: 'base64', media_type: file.type || 'image/jpeg', data: base64 } };
+    const content = [bloco, { type: 'text', text: 'Extraia APENAS o número único do processo no padrão CNJ (NNNNNNN-DD.AAAA.J.TT.OOOO) que aparece neste documento. Responda somente o número, nada mais. Se não houver, responda: nenhum.' }];
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.trim(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 80, messages: [{ role: 'user', content }] }),
+    });
+    if (!resp.ok) return '';
+    const data = await resp.json();
+    const txt = ((data.content as { type: string; text?: string }[]) || []).filter(b => b.type === 'text').map(b => b.text || '').join('');
+    return extrairCnjTexto(txt);
+  } catch { return ''; }
+}
+
+type LinhaPet = {
+  id: string; file: File; nome: string; cnj: string; processoId: string;
+  tipo: TipoPeticao; status: StatusPeticao; detectando: boolean; origem: 'nome' | 'ia' | 'manual' | 'nenhum';
+};
+
+function DialogImportarPeticoes({ onClose }: { onClose: () => void }) {
+  const { state, dispatch } = useApp();
+  const apiKey = state.anthropicApiKey || '';
+  const [linhas, setLinhas] = useState<LinhaPet[]>([]);
+  const [importando, setImportando] = useState(false);
+
+  const procIdPorCnj = (cnj: string): string => {
+    const d = soDigPet(cnj);
+    if (d.length < 20) return '';
+    return state.processos.find(x => soDigPet(x.numero) === d)?.id || '';
+  };
+  const rotuloProc = (id: string) => {
+    const p = state.processos.find(x => x.id === id);
+    if (!p) return '';
+    const cli = state.clientes.find(c => c.id === p.clienteId);
+    return `${p.numero} · ${cli?.nome || '—'}`;
+  };
+
+  const onFiles = async (files: FileList | null) => {
+    const lista = files ? Array.from(files) : [];
+    if (!lista.length) return;
+    const novas: LinhaPet[] = lista.map(f => ({
+      id: genId(), file: f, nome: (f.name || 'petição').replace(/\.[^.]+$/, ''),
+      cnj: '', processoId: '', tipo: 'outro', status: 'protocolado', detectando: true, origem: 'nenhum',
+    }));
+    setLinhas(prev => [...prev, ...novas]);
+    for (const ln of novas) {
+      let cnj = extrairCnjTexto(ln.file.name);
+      let origem: LinhaPet['origem'] = cnj ? 'nome' : 'nenhum';
+      if (!cnj && apiKey) { cnj = await detectarCnjIA(ln.file, apiKey); if (cnj) origem = 'ia'; }
+      const pid = cnj ? procIdPorCnj(cnj) : '';
+      setLinhas(prev => prev.map(x => x.id === ln.id ? { ...x, cnj, processoId: pid, detectando: false, origem } : x));
+    }
+  };
+  const setLinha = (id: string, patch: Partial<LinhaPet>) => setLinhas(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
+  const remover = (id: string) => setLinhas(prev => prev.filter(x => x.id !== id));
+
+  const prontas = linhas.filter(l => l.processoId && l.nome.trim() && !l.detectando);
+  const importar = async () => {
+    if (!prontas.length) { toast.error('Nenhuma petição com processo definido para importar.'); return; }
+    setImportando(true);
+    let ok = 0; const falhas: string[] = [];
+    const hoje = new Date().toISOString().split('T')[0];
+    for (const l of prontas) {
+      const path = `${genId()}-${l.file.name.replace(/[^\w.\-]/g, '_')}`;
+      const { error } = await supabase.storage.from('peticoes').upload(path, l.file, { upsert: false, contentType: l.file.type || undefined });
+      if (error) { falhas.push(l.file.name); continue; }
+      dispatch({ type: 'ADD_PETICAO', payload: {
+        id: genId(), processoId: l.processoId, nome: l.nome.trim(), tipo: l.tipo, status: l.status,
+        dataProtocolo: hoje, numeroProtocolo: '', observacoes: 'Importada em lote', conteudo: '',
+        arquivoPath: path, arquivoNome: l.file.name, criadoEm: hoje,
+      } });
+      ok++;
+    }
+    setImportando(false);
+    if (ok) toast.success(`${ok} petição(ões) importada(s) e vinculada(s)! Já pode apagar os arquivos do computador.`);
+    if (falhas.length) toast.error(`Falha ao enviar ${falhas.length} arquivo(s): ${falhas.slice(0, 2).join(', ')}${falhas.length > 2 ? '…' : ''}`);
+    if (ok) onClose();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800">
+        <p className="font-semibold flex items-center gap-1.5"><Brain size={12} />Importar petições em lote</p>
+        <p className="mt-0.5">Selecione os arquivos das petições (PDF, imagem, .doc, .docx…). A IA <b>lê o conteúdo</b> para descobrir o processo e vincular sozinha. Confira e ajuste antes de importar. Depois de importado, pode <b>apagar os arquivos do computador</b>.</p>
+        {!apiKey && <p className="mt-1 text-amber-700">Sem Chave API Anthropic: a IA não lerá o conteúdo — só detecta pelo nome do arquivo ou você escolhe o processo manualmente.</p>}
+      </div>
+
+      <label className="cursor-pointer block border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-blue-300 transition-colors">
+        <input type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.odt,.rtf,.txt,image/*" onChange={e => { onFiles(e.target.files); e.target.value = ''; }} />
+        <Upload size={26} className="mx-auto text-gray-300 mb-1" />
+        <p className="text-sm text-gray-500 font-medium">Clique para selecionar as petições</p>
+        <p className="text-xs text-gray-400 mt-1">Pode selecionar vários arquivos de uma vez</p>
+      </label>
+
+      {linhas.length > 0 && (
+        <div className="space-y-2 max-h-[46vh] overflow-y-auto pr-1">
+          {linhas.map(l => (
+            <div key={l.id} className="border rounded p-2.5 text-xs space-y-2">
+              <div className="flex items-center gap-2">
+                <FileText size={14} className="text-gray-500 flex-shrink-0" />
+                <Input className="h-7 text-xs flex-1" value={l.nome} onChange={e => setLinha(l.id, { nome: e.target.value })} />
+                <button type="button" className="text-gray-400 hover:text-red-500 flex-shrink-0" onClick={() => remover(l.id)}><X size={14} /></button>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {l.detectando
+                  ? <span className="text-blue-600 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> IA lendo o conteúdo…</span>
+                  : l.processoId
+                    ? <span className="text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">✓ {rotuloProc(l.processoId)}{l.origem === 'ia' ? ' (IA)' : l.origem === 'nome' ? ' (nome)' : ''}</span>
+                    : l.cnj
+                      ? <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">CNJ {l.cnj} não está cadastrado — escolha abaixo</span>
+                      : <span className="text-gray-500">Processo não identificado — escolha abaixo</span>}
+                <Select value={l.tipo} onValueChange={v => setLinha(l.id, { tipo: v as TipoPeticao })}>
+                  <SelectTrigger className="h-7 text-[11px] w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(['inicial','contestação','recurso','parecer','embargos','outro'] as TipoPeticao[]).map(t => <SelectItem key={t} value={t} className="text-xs capitalize">{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={l.status} onValueChange={v => setLinha(l.id, { status: v as StatusPeticao })}>
+                  <SelectTrigger className="h-7 text-[11px] w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(['protocolado','juntado','rascunho'] as StatusPeticao[]).map(s => <SelectItem key={s} value={s} className="text-xs capitalize">{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {!l.processoId && !l.detectando && (
+                <div><ProcessoPicker value={l.processoId} onChange={v => setLinha(l.id, { processoId: v, origem: 'manual' })} /></div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <DialogFooter>
+        <Button variant="cancel" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button size="sm" variant="success" onClick={importar} disabled={importando || !prontas.length}>
+          {importando ? <Loader2 size={13} className="animate-spin mr-1" /> : <Upload size={13} className="mr-1" />}
+          Importar {prontas.length ? `${prontas.length} ` : ''}petição(ões)
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
 export default function Peticoes() {
   const { state, dispatch, usuario } = useApp();
   const [verProc, setVerProc] = useState<Processo | null>(null);
@@ -388,6 +557,7 @@ export default function Peticoes() {
   const [arquivarId, setArquivarId] = useState<string | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importPetOpen, setImportPetOpen] = useState(false);
   const [iaOpen, setIaOpen] = useState(false);
 
   const arquivadosCount = state.peticoes.filter(p => p.arquivado).length;
@@ -457,6 +627,7 @@ export default function Peticoes() {
         {usuario.podeEditar && (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" className="text-xs" onClick={() => setImportOpen(true)}><Upload size={14} className="mr-1" />Importar CSV</Button>
+            <Button variant="outline" size="sm" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setImportPetOpen(true)}><Brain size={14} className="mr-1" />Importar petições (IA)</Button>
             <Button variant="outline" size="sm" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setIaOpen(true)}><Wand2 size={14} className="mr-1" />Gerar com IA</Button>
             <Button size="sm" className="bg-[#2563eb] hover:bg-blue-700 text-xs" onClick={() => { setEditPeticao(null); setDialogOpen(true); }}><Plus size={14} className="mr-1" />Nova Petição</Button>
           </div>
@@ -533,6 +704,13 @@ export default function Peticoes() {
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Importar Petições (CSV)</DialogTitle></DialogHeader>
           <ImportCSVPet onImport={handleImport} onClose={() => setImportOpen(false)} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importPetOpen} onOpenChange={setImportPetOpen}>
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="text-[#1e3a5f] flex items-center gap-2"><Brain size={16} className="text-blue-500" />Importar petições (a IA vincula ao processo)</DialogTitle></DialogHeader>
+          {importPetOpen && <DialogImportarPeticoes onClose={() => setImportPetOpen(false)} />}
         </DialogContent>
       </Dialog>
 
