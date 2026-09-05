@@ -1925,6 +1925,7 @@ interface LinhaLote {
   adverso: string;
   tribunal: string;
   incluir: boolean;
+  procon?: boolean;   // linha que menciona PROCON → cadastra como processo Procon (nº = protocolo/administrativo)
 }
 
 const REGEX_CNJ = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
@@ -1953,6 +1954,9 @@ function parsearLote(texto: string): LinhaLote[] {
     campos = campos.map(c => c.trim()).filter(Boolean);
     if (campos.length === 0) continue;
 
+    // PROCON: a linha menciona Procon → registra como processo Procon (nº = protocolo/administrativo).
+    const ehProcon = /\bprocon\b/i.test(linha);
+
     // Extrai número: CNJ padrão, senão o primeiro campo que pareça número de processo
     const cnjMatch = linha.match(REGEX_CNJ);
     let numero = cnjMatch ? cnjMatch[0] : '';
@@ -1961,16 +1965,21 @@ function parsearLote(texto: string): LinhaLote[] {
       if (/\d/.test(c0) && /[.\-/]/.test(c0)) numero = c0;                 // formatos antigos: 001/1.05.0357271-7
       else if (/^(tempor|sem\s*n|-|s\/n)/i.test(c0)) numero = c0.toUpperCase();
     }
+    // Procon sem CNJ: usa o protocolo/nº administrativo como número (1º campo com algum dígito, tirando "PROCON").
+    if (ehProcon && !numero) {
+      const protoc = campos.find(c => /\d/.test(c) && !/^procon$/i.test(c.trim()));
+      if (protoc) numero = protoc.trim();
+    }
 
     // Campos textuais (remove o número e "pastas" puramente numéricas como "0")
-    const textuais = campos.filter(c => c !== numero && !/^\d+$/.test(c) && !REGEX_CNJ.test(c));
+    const textuais = campos.filter(c => c !== numero && !/^\d+$/.test(c) && !REGEX_CNJ.test(c) && !/^procon$/i.test(c.trim()));
     const cliente = textuais[0] || '';
     const adverso = textuais.length >= 2 ? textuais[textuais.length - 1] : '';
 
     const trib = tribunalFromNumero(numero);
     // Só adiciona linhas que tenham ao menos número OU cliente
     if (numero || cliente) {
-      resultado.push({ numero, cliente, adverso, tribunal: trib?.sigla || '', incluir: true });
+      resultado.push({ numero, cliente, adverso, tribunal: ehProcon ? 'PROCON' : (trib?.sigla || ''), incluir: true, procon: ehProcon });
     }
   }
   return resultado;
@@ -2089,7 +2098,10 @@ function DialogImportarLote({ onClose }: { onClose: () => void }) {
         numero: linha.numero,
         clienteId,
         parteContraria: linha.adverso || base.parteContraria || '',
-        tribunal: base.tribunal || linha.tribunal || '',
+        tribunal: base.tribunal || linha.tribunal || (linha.procon ? 'PROCON' : ''),
+        // Procon: registra como processo Procon (natureza + área), com o protocolo/administrativo como número.
+        natureza: linha.procon ? 'procon' : base.natureza,
+        area: linha.procon ? 'procon' : base.area,
         id: genId(),
         movimentacoes: movs,
         criadoEm: hoje,
@@ -2172,7 +2184,10 @@ function DialogImportarLote({ onClose }: { onClose: () => void }) {
                         <input type="checkbox" checked={l.incluir} onChange={() => toggleLinha(idx)} className="accent-blue-600" />
                       </td>
                       <td className="p-1.5">
-                        <input className="w-full bg-transparent font-mono text-[11px] outline-none focus:bg-blue-50 rounded px-1" value={l.numero} onChange={e => editarCampo(idx, 'numero', e.target.value)} />
+                        <div className="flex items-center gap-1">
+                          <input className="w-full bg-transparent font-mono text-[11px] outline-none focus:bg-blue-50 rounded px-1" value={l.numero} onChange={e => editarCampo(idx, 'numero', e.target.value)} placeholder={l.procon ? 'protocolo Procon' : ''} />
+                          {l.procon && <span title="Detectado como Procon — será cadastrado como processo Procon (nº = protocolo)" className="text-[9px] bg-purple-100 text-purple-700 rounded px-1 flex-shrink-0">Procon</span>}
+                        </div>
                       </td>
                       <td className="p-1.5">
                         <div className="flex items-center gap-1">
