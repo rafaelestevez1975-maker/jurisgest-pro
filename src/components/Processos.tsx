@@ -699,9 +699,13 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
     const dados = resultado.dados as any;
     const movs: Movimentacao[] = dados._movs || [];
     const { _movs: _removed, ...dadosLimpos } = dados;
-    // Anexa o 1º print (aba imagem) para ser salvo no Storage e vinculado ao processo
+    // Anexa o 1º print (aba imagem) como imagem principal do processo
     const _image = (tab === 'imagem' && imagens.length)
       ? { base64: imagens[0].base64, mime: imagens[0].mime, nome: imagens[0].nome }
+      : undefined;
+    // Salva TODAS as imagens que geraram o processo como documentos do cadastro.
+    const _imagensDocs = (tab === 'imagem' && imagens.length)
+      ? imagens.map(i => ({ base64: i.base64, mime: i.mime, nome: i.nome }))
       : undefined;
     // Anexa o PDF de origem como documento do processo
     const _pdf = (tab === 'pdf' && pdf)
@@ -711,7 +715,7 @@ function DialogImportarIA({ onPreencherFormulario, onClose }: {
     const resolvido = clienteId ? resolverPoloCliente(clienteId, resultado.partes.poloAtivo, resultado.partes.poloPassivo, state.clientes) : null;
     const polo = resolvido?.polo ?? dadosLimpos.polo;
     const parteContraria = resolvido?.parteContraria ?? dadosLimpos.parteContraria;
-    onPreencherFormulario({ ...dadosLimpos, polo, parteContraria, clienteId, movimentacoes: movs, _image, _pdf } as any);
+    onPreencherFormulario({ ...dadosLimpos, polo, parteContraria, clienteId, movimentacoes: movs, _image, _imagensDocs, _pdf } as any);
     onClose();
   };
 
@@ -2292,6 +2296,7 @@ export default function Processos() {
   // print pendente (extraído por imagem) a ser salvo no Storage ao cadastrar
   const [pendingImage, setPendingImage] = useState<{ base64: string; mime: string; nome: string } | null>(null);
   const [pendingPdf, setPendingPdf] = useState<{ base64: string; nome: string } | null>(null);
+  const [pendingImagensDocs, setPendingImagensDocs] = useState<{ base64: string; mime: string; nome: string }[] | null>(null);
 
   const arquivadosCount = state.processos.filter(p => p.arquivado).length;
   const procById = useMemo(() => new Map(state.processos.map(p => [p.id, p])), [state.processos]);
@@ -2400,7 +2405,19 @@ export default function Processos() {
     toast.success('Processo restaurado.');
   };
 
-  const limparPendencias = () => { setPendingImage(null); setPendingPdf(null); };
+  const limparPendencias = () => { setPendingImage(null); setPendingPdf(null); setPendingImagensDocs(null); };
+
+  // Anexa uma lista de imagens (base64) a um processo como documentos.
+  const anexarImagensComoDocs = async (processoId: string, imgs: { base64: string; mime: string; nome: string }[]) => {
+    let ok = 0;
+    for (const img of imgs) {
+      const ext = (img.mime && img.mime.includes('png')) ? 'png' : 'jpg';
+      const nome = /\.(png|jpe?g|gif|webp)$/i.test(img.nome || '') ? img.nome : `${(img.nome || 'imagem').replace(/\.[^.]+$/, '')}.${ext}`;
+      const { error } = await db.uploadDocumento(processoId, base64ParaArquivo(img.base64, nome, img.mime || 'image/jpeg'), 'imagem');
+      if (!error) ok++;
+    }
+    return ok;
+  };
 
   const handleSave = async (data: Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>, movs?: Movimentacao[]) => {
     if (editProcesso) {
@@ -2428,8 +2445,13 @@ export default function Processos() {
         const { error } = await db.uploadDocumento(existente.id, base64ParaArquivo(pendingPdf.base64, pendingPdf.nome), 'documento');
         if (error) toast.error('Não foi possível anexar o PDF ao processo existente.');
         else toast.success('Processo já cadastrado — PDF anexado a ele.');
-      } else {
+      } else if (!pendingImagensDocs?.length) {
         toast.info('Processo já cadastrado — abrindo o existente.');
+      }
+      // Salva também todas as imagens que geraram o processo como documentos
+      if (pendingImagensDocs?.length) {
+        const n = await anexarImagensComoDocs(existente.id, pendingImagensDocs);
+        if (n) toast.success(`Processo já cadastrado — ${n} imagem(ns) anexada(s) a ele.`);
       }
       setDialogOpen(false); setEditProcesso(null); setPrefill(null); limparPendencias();
       setViewProcesso(existente);
@@ -2446,22 +2468,30 @@ export default function Processos() {
     }
     const novo: Processo = { ...data, id, origem, imagemPath, imagemNome, movimentacoes: movs || [], criadoEm: new Date().toISOString().split('T')[0] };
     dispatch({ type: 'ADD_PROCESSO', payload: novo });
-    if (pendingPdf) {
-      // Garante que o processo já exista no banco antes de anexar o documento (FK), depois envia o PDF.
+    // Anexa PDF e/ou TODAS as imagens que geraram o processo como documentos do cadastro.
+    let anexosMsg = '';
+    if (pendingPdf || pendingImagensDocs?.length) {
+      // Garante que o processo já exista no banco antes de anexar os documentos (FK).
       await db.upsertProcesso(novo);
-      const { error } = await db.uploadDocumento(id, base64ParaArquivo(pendingPdf.base64, pendingPdf.nome), 'documento');
-      if (error) toast.error('Processo criado, mas não foi possível anexar o PDF. Anexe-o depois na aba Documentos.');
-      else toast.success('Processo cadastrado com o PDF anexado!');
-    } else {
-      toast.success(pendingImage ? 'Processo cadastrado com o print anexado!' : 'Processo cadastrado!');
+      if (pendingPdf) {
+        const { error } = await db.uploadDocumento(id, base64ParaArquivo(pendingPdf.base64, pendingPdf.nome), 'documento');
+        if (error) toast.error('Processo criado, mas não foi possível anexar o PDF. Anexe-o depois na aba Documentos.');
+        else anexosMsg = 'PDF anexado';
+      }
+      if (pendingImagensDocs?.length) {
+        const n = await anexarImagensComoDocs(id, pendingImagensDocs);
+        if (n) anexosMsg = anexosMsg ? `${anexosMsg} · ${n} imagem(ns)` : `${n} imagem(ns) anexada(s)`;
+      }
     }
+    toast.success(anexosMsg ? `Processo cadastrado — ${anexosMsg}!` : (pendingImage ? 'Processo cadastrado com o print anexado!' : 'Processo cadastrado!'));
     setDialogOpen(false); setEditProcesso(null); setPrefill(null); limparPendencias();
   };
 
-  const handleDataJudPrefill = (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[]; _image?: { base64: string; mime: string; nome: string }; _pdf?: { base64: string; nome: string } }) => {
-    const { _image, _pdf, ...rest } = dados;
+  const handleDataJudPrefill = (dados: Partial<Omit<Processo, 'id' | 'criadoEm' | 'movimentacoes'>> & { movimentacoes?: Movimentacao[]; _image?: { base64: string; mime: string; nome: string }; _imagensDocs?: { base64: string; mime: string; nome: string }[]; _pdf?: { base64: string; nome: string } }) => {
+    const { _image, _imagensDocs, _pdf, ...rest } = dados;
     setPendingImage(_image || null);
     setPendingPdf(_pdf || null);
+    setPendingImagensDocs(_imagensDocs && _imagensDocs.length ? _imagensDocs : null);
     const base = emptyProcesso();
     setPrefill({ ...base, ...rest });
     setEditProcesso(null);
